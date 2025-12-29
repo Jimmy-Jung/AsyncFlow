@@ -1,0 +1,24 @@
+{
+  "originHash" : "0450c0958e9d17af5318a8cefcc909f48bf8a1a68ddcf1b8991e91aa5dfb7428",
+  "pins" : [
+    {
+      "identity" : "asyncviewmodel",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Jimmy-Jung/AsyncViewModel",
+      "state" : {
+        "revision" : "4b10a08b364b664fb0c2d75bbaa6fd2bc0c6a039",
+        "version" : "1.2.0"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "0687f71944021d616d34d922343dcef086855920",
+        "version" : "600.0.1"
+      }
+    }
+  ],
+  "version" : 3
+}
