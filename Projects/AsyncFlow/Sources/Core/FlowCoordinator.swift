@@ -23,12 +23,10 @@ import Foundation
 public final class FlowCoordinator {
     // MARK: - Properties
 
-    /// 네비게이션 직전 이벤트 스트림
     public var willNavigate: AsyncStream<NavigationEvent> {
         willNavigateBridge.stream
     }
 
-    /// 네비게이션 완료 이벤트 스트림
     public var didNavigate: AsyncStream<NavigationEvent> {
         didNavigateBridge.stream
     }
@@ -36,7 +34,6 @@ public final class FlowCoordinator {
     private let willNavigateBridge = AsyncStreamBridge<NavigationEvent>()
     private let didNavigateBridge = AsyncStreamBridge<NavigationEvent>()
 
-    /// Flow별 관리되는 Task들
     private struct ContributorTasks {
         let stepperTask: Task<Void, Never>
         let lifecycleTask: Task<Void, Never>?
@@ -61,12 +58,10 @@ public final class FlowCoordinator {
 
     // MARK: - Public Methods
 
-    /// Flow 조율 시작
     public func coordinate<F: Flow, S: Stepper>(
         flow: F,
         with stepper: S
     ) where F.StepType == S.StepType {
-        // Flow 자체가 Presentable이므로 이를 감시 대상으로 설정
         startListening(to: stepper, in: flow, presentable: flow)
     }
 
@@ -134,7 +129,6 @@ public final class FlowCoordinator {
         await registerContributors(contributors, in: flow)
     }
 
-    /// FlowContributors 등록
     private func registerContributors<F: Flow>(
         _ contributors: FlowContributors<F.StepType>,
         in flow: F
