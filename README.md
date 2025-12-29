@@ -126,7 +126,8 @@ Step을 방출하는 주체 (주로 ViewModel)
 
 ```swift
 @MainActor
-final class MovieListViewModel: ObservableObject {
+final class MovieListViewModel: ObservableObject, Stepper {
+    @StepEmitter var stepEmitter: StepEmitter<MovieStep>
     @Published var state = State()
     
     enum Input: Sendable {
@@ -137,23 +138,10 @@ final class MovieListViewModel: ObservableObject {
         var movies: [Movie] = []
     }
     
-    private var stepContinuation: AsyncStream<MovieStep>.Continuation?
-    
     func send(_ input: Input) {
         switch input {
-        case .movieTapped(let id):
-            stepContinuation?.yield(.movieDetail(id: id))  // ← Step 방출!
-        }
-    }
-}
-
-// MARK: - Stepper
-extension MovieListViewModel: Stepper {
-    typealias StepType = MovieStep
-    
-    var steps: AsyncStream<MovieStep> {
-        AsyncStream { [weak self] continuation in
-            self?.stepContinuation = continuation
+        case let .movieTapped(id):
+            emit(.movieDetail(id: id))  // ← Step 방출!
         }
     }
 }
@@ -216,46 +204,20 @@ return .multiple([
 ```swift
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
+    var window: UIWindow?
+    let coordinator = FlowCoordinator()
+    
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        return true
-    }
-    
-    func application(
-        _ application: UIApplication,
-        configurationForConnecting connectingSceneSession: UISceneSession,
-        options: UIScene.ConnectionOptions
-    ) -> UISceneConfiguration {
-        let configuration = UISceneConfiguration(
-            name: "Default Configuration",
-            sessionRole: connectingSceneSession.role
-        )
-        configuration.delegateClass = SceneDelegate.self
-        return configuration
-    }
-}
-
-// MARK: - SceneDelegate
-class SceneDelegate: UIResponder, UIWindowSceneDelegate {
-    var window: UIWindow?
-    let coordinator = FlowCoordinator()
-    
-    func scene(
-        _ scene: UIScene,
-        willConnectTo session: UISceneSession,
-        options connectionOptions: UIScene.ConnectionOptions
-    ) {
-        guard let windowScene = scene as? UIWindowScene else { return }
+        window = UIWindow(frame: UIScreen.main.bounds)
         
-        let window = UIWindow(windowScene: windowScene)
-        self.window = window
-        
-        // App Flow 시작
-        let appFlow = AppFlow(window: window)
+        let appFlow = AppFlow(window: window!)
         let appStepper = OneStepper(MovieStep.appLaunch)
         coordinator.coordinate(flow: appFlow, with: appStepper)
+        
+        return true
     }
 }
 ```

@@ -58,12 +58,13 @@ enum MovieStep: Step {
 
 ```swift
 @MainActor
-final class MovieListViewModel: Stepper {
-    typealias StepType = MovieStep
+final class MovieListViewModel: ObservableObject, Stepper {
+    @StepEmitter var stepEmitter: StepEmitter<MovieStep>
+    @Published var state = State()
     
     func send(_ input: Input) {
         switch input {
-        case .movieTapped(let id):
+        case let .movieTapped(id):
             emit(.movieDetail(id: id))  // Step 방출!
         }
     }
@@ -101,10 +102,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     let coordinator = FlowCoordinator()
     
-    func application(...) -> Bool {
-        let appFlow = AppFlow(window: window)
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        window = UIWindow(frame: UIScreen.main.bounds)
+        
+        let appFlow = AppFlow(window: window!)
         let appStepper = OneStepper(MovieStep.appLaunch)
         coordinator.coordinate(flow: appFlow, with: appStepper)
+        
         return true
     }
 }

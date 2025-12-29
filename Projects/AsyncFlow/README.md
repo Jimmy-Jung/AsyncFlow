@@ -56,15 +56,15 @@ enum MovieStep: Step {
 ### 2. Stepper (Step 방출자)
 
 ```swift
-@AsyncViewModel
-final class MovieListViewModel: Stepper {
-    typealias StepType = MovieStep
+@MainActor
+final class MovieListViewModel: ObservableObject, Stepper {
+    @StepEmitter var stepEmitter: StepEmitter<MovieStep>
+    @Published var state = State()
     
-    func reduce(state: inout State, action: Action) -> [AsyncEffect<Action, CancelID>] {
-        switch action {
-        case .selectMovie(let id):
+    func send(_ input: Input) {
+        switch input {
+        case let .movieTapped(id):
             emit(.movieDetail(id: id))  // Step 방출!
-            return []
         }
     }
 }
