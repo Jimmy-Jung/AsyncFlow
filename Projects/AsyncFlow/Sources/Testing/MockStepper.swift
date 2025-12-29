@@ -37,22 +37,22 @@ import Foundation
 @MainActor
 public final class MockStepper<S: Step>: Stepper {
     public typealias StepType = S
-    
+
     // MARK: - Properties
-    
+
     /// 구독 시작 감지 콜백 (테스트 동기화용)
     public var onObservationStart: (() -> Void)?
-    
+
     /// Step 스트림
     public var steps: AsyncStream<S> {
         AsyncStream { [weak self] continuation in
             self?.continuation = continuation
-            
+
             // 구독자가 생겼음을 알림
             Task { @MainActor [weak self] in
                 self?.onObservationStart?()
             }
-            
+
             continuation.onTermination = { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.continuation = nil
@@ -60,18 +60,18 @@ public final class MockStepper<S: Step>: Stepper {
             }
         }
     }
-    
+
     private var continuation: AsyncStream<S>.Continuation?
-    
+
     /// 방출된 Step 목록 (추적용)
     public private(set) var emittedSteps: [S] = []
-    
+
     // MARK: - Initialization
-    
+
     public init() {}
-    
+
     // MARK: - Public Methods
-    
+
     /// Step 방출
     ///
     /// - Parameter step: 방출할 Step
@@ -79,7 +79,7 @@ public final class MockStepper<S: Step>: Stepper {
         emittedSteps.append(step)
         continuation?.yield(step)
     }
-    
+
     /// 여러 Step 연속 방출
     ///
     /// - Parameter steps: 방출할 Step 배열
@@ -88,7 +88,7 @@ public final class MockStepper<S: Step>: Stepper {
             emit(step)
         }
     }
-    
+
     /// Step 방출 후 대기
     ///
     /// - Parameters:
@@ -98,13 +98,13 @@ public final class MockStepper<S: Step>: Stepper {
         emit(step)
         try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
     }
-    
+
     /// 스트림 종료
     public func complete() {
         continuation?.finish()
         continuation = nil
     }
-    
+
     /// 추적 데이터 초기화
     public func reset() {
         emittedSteps.removeAll()
