@@ -136,13 +136,13 @@ public final class FlowCoordinator {
         switch contributors {
         case .none:
             break
-
         case let .one(contributor):
             await registerContributor(contributor, in: flow)
-
         case let .multiple(contributorList):
-            for contributor in contributorList {
-                await registerContributor(contributor, in: flow)
+            await withTaskGroup(of: Void.self) { group in
+                for contributor in contributorList {
+                    group.addTask { await self.registerContributor(contributor, in: flow) }
+                }
             }
         }
     }
