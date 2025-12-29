@@ -17,34 +17,78 @@ import Foundation
 
 /// 전체 네비게이션을 조율하는 코디네이터
 ///
-/// FlowCoordinator는 앱에 단 하나만 존재하며,
-/// 모든 Flow와 Stepper를 관리하고 Step을 처리합니다.
+/// FlowCoordinator는 Flow와 Stepper를 관리하고 Step을 처리합니다.
+/// RxFlow와 동일하게 부모-자식 FlowCoordinator 관계를 지원합니다.
+///
+/// ## 사용 예시
+///
+/// ```swift
+/// class AppDelegate: UIResponder, UIApplicationDelegate {
+///     let coordinator = FlowCoordinator()
+///
+///     func application(_ application: UIApplication,
+///                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+///
+///         let appFlow = AppFlow(window: window)
+///         let appStepper = OneStepper(withSingleStep: AppStep.launch)
+///
+///         // 네비게이션 이벤트 구독
+///         Task {
+///             for await event in coordinator.didNavigate {
+///                 print("did navigate: \(event)")
+///             }
+///         }
+///
+///         coordinator.coordinate(flow: appFlow, with: appStepper)
+///
+///         return true
+///     }
+/// }
+/// ```
 @MainActor
 public final class FlowCoordinator {
     // MARK: - Properties
 
+    /// 네비게이션 시작 전 이벤트 스트림
     public var willNavigate: AsyncStream<NavigationEvent> {
         willNavigateBridge.stream
     }
 
+    /// 네비게이션 완료 후 이벤트 스트림
     public var didNavigate: AsyncStream<NavigationEvent> {
         didNavigateBridge.stream
     }
 
-    private let willNavigateBridge = AsyncStreamBridge<NavigationEvent>()
-    private let didNavigateBridge = AsyncStreamBridge<NavigationEvent>()
+    private let willNavigateBridge = AsyncPassthroughSubject<NavigationEvent>()
+    private let didNavigateBridge = AsyncPassthroughSubject<NavigationEvent>()
 
-    private struct ContributorTasks {
-        let stepperTask: Task<Void, Never>
-        let lifecycleTask: Task<Void, Never>?
+    /// Step을 집계하는 Subject
+    private let stepsSubject = AsyncPassthroughSubject<Step>()
 
-        func cancel() {
-            stepperTask.cancel()
-            lifecycleTask?.cancel()
+    /// 고유 식별자
+    let identifier = UUID().uuidString
+
+    /// 자식 FlowCoordinator 딕셔너리
+    private var childFlowCoordinators: [String: FlowCoordinator] = [:]
+
+    /// 부모 FlowCoordinator (weak reference)
+    private weak var parentFlowCoordinator: FlowCoordinator? {
+        didSet {
+            if let parent = parentFlowCoordinator {
+                // 부모에게 네비게이션 이벤트 전파
+                forwardNavigationEvents(to: parent)
+            }
         }
     }
 
-    private var tasks: [UUID: ContributorTasks] = [:]
+    /// 현재 조율 중인 Flow
+    private weak var currentFlow: Flow?
+
+    /// 현재 활성화된 Task들
+    private var activeTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// allowStepWhenDismissed 플래그
+    private var allowStepWhenDismissed: Bool = false
 
     public init() {
         #if canImport(UIKit)
@@ -58,117 +102,332 @@ public final class FlowCoordinator {
 
     // MARK: - Public Methods
 
-    public func coordinate<F: Flow, S: Stepper>(
-        flow: F,
-        with stepper: S
-    ) where F.StepType == S.StepType {
-        startListening(to: stepper, in: flow, presentable: flow)
+    /// Flow와 Stepper로 네비게이션 시작
+    ///
+    /// - Parameters:
+    ///   - flow: 조율할 Flow
+    ///   - stepper: Flow를 구동할 Stepper
+    ///   - allowStepWhenDismissed: dismiss되어도 Step 허용 여부 (기본값: false)
+    public func coordinate(
+        flow: Flow,
+        with stepper: Stepper,
+        allowStepWhenDismissed: Bool = false
+    ) {
+        print("🎯 FlowCoordinator.coordinate called for flow: \(type(of: flow))")
+        currentFlow = flow
+        self.allowStepWhenDismissed = allowStepWhenDismissed
+
+        // Step Subject 구독 시작
+        startListeningToSteps(for: flow)
+
+        // initialStep을 즉시 stepsSubject에 전송
+        // AsyncPassthroughSubject가 버퍼링을 지원하므로 안전함
+        let initialStep = stepper.initialStep
+        print("📤 Sending initialStep: \(initialStep)")
+        if !(initialStep is NoneStep) {
+            stepsSubject.send(initialStep)
+            print("✅ initialStep sent to stepsSubject")
+        } else {
+            print("⚠️ initialStep is NoneStep, skipping")
+        }
+
+        // readyToEmitSteps 호출
+        stepper.readyToEmitSteps()
+
+        // 이후 Step 이벤트 구독
+        startListeningToStepperEvents(stepper, for: flow)
+        print("✅ FlowCoordinator.coordinate completed")
+    }
+
+    /// 외부에서 Step을 직접 주입
+    ///
+    /// DeepLink 처리 등에 사용됩니다.
+    /// 주입된 Step은 모든 자식 Flow에도 전파됩니다.
+    ///
+    /// - Parameter step: 주입할 Step
+    public func navigate(to step: Step) {
+        stepsSubject.send(step)
+        childFlowCoordinators.values.forEach { $0.navigate(to: step) }
     }
 
     // MARK: - Private Methods
 
-    private func startListening<F: Flow, S: Stepper>(
-        to stepper: S,
-        in flow: F,
-        presentable: Presentable? = nil
-    ) where F.StepType == S.StepType {
+    /// Step Subject 구독
+    private func startListeningToSteps(for flow: Flow) {
         let taskId = UUID()
-        let stepperTask = createStepperTask(for: stepper, in: flow, taskId: taskId)
-        let lifecycleTask = createLifecycleTask(for: presentable, stepperTask: stepperTask)
+        let task = Task { [weak self, weak flow] in
+            guard let flow = flow else { return }
 
-        tasks[taskId] = ContributorTasks(
-            stepperTask: stepperTask,
-            lifecycleTask: lifecycleTask
-        )
-    }
-
-    private func createStepperTask<F: Flow, S: Stepper>(
-        for stepper: S,
-        in flow: F,
-        taskId: UUID
-    ) -> Task<Void, Never> where F.StepType == S.StepType {
-        Task { [weak self] in
-            defer { self?.removeTask(taskId) }
-            for await step in stepper.steps {
+            for await step in self?.stepsSubject.stream ?? AsyncStream(unfolding: { nil }) {
+                guard !Task.isCancelled else { break }
                 await self?.handleStep(step, in: flow)
             }
+
+            self?.removeTask(taskId)
         }
-    }
 
-    private func createLifecycleTask(
-        for presentable: Presentable?,
-        stepperTask: Task<Void, Never>
-    ) -> Task<Void, Never>? {
-        guard let presentable = presentable else { return nil }
+        activeTasks[taskId] = task
 
-        return Task {
-            for await _ in presentable.onDismissed {
-                stepperTask.cancel()
-                break
+        // Flow dismiss 시 정리
+        if !allowStepWhenDismissed {
+            let dismissTaskId = UUID()
+            let dismissTask = Task { [weak self, weak flow] in
+                guard let flow = flow else { return }
+
+                for await _ in flow.onDismissed {
+                    self?.cleanup()
+                    break
+                }
+
+                self?.removeTask(dismissTaskId)
             }
+            activeTasks[dismissTaskId] = dismissTask
         }
     }
 
-    private func removeTask(_ id: UUID) {
-        tasks[id]?.cancel()
-        tasks.removeValue(forKey: id)
+    /// Stepper 이벤트 구독 (initialStep 제외)
+    private func startListeningToStepperEvents(_ stepper: Stepper, for flow: Flow) {
+        let taskId = UUID()
+        let task = Task { [weak self, weak stepper] in
+            guard let stepper = stepper else { return }
+
+            // Stepper의 steps 스트림 구독
+            for await step in stepper.steps.stream {
+                guard !Task.isCancelled else { break }
+
+                if step is NoneStep { continue }
+                self?.stepsSubject.send(step)
+            }
+
+            self?.removeTask(taskId)
+        }
+
+        activeTasks[taskId] = task
+
+        // Flow dismiss 시 구독 해제
+        if !allowStepWhenDismissed {
+            let dismissTaskId = UUID()
+            let dismissTask = Task { [weak self, weak flow] in
+                guard let flow = flow else { return }
+
+                for await _ in flow.onDismissed {
+                    self?.activeTasks[taskId]?.cancel()
+                    break
+                }
+
+                self?.removeTask(dismissTaskId)
+            }
+            activeTasks[dismissTaskId] = dismissTask
+        }
     }
 
-    private func handleStep<F: Flow>(
-        _ step: F.StepType,
-        in flow: F
-    ) async {
-        guard let adaptedStep = await flow.adapt(step: step) else { return }
+    /// Step 처리
+    private func handleStep(_ step: Step, in flow: Flow) async {
+        // Step 적응 (필터링)
+        let adaptedStep = await flow.adapt(step: step)
+        if adaptedStep is NoneStep { return }
 
+        // willNavigate 이벤트 발생
         let event = NavigationEvent(flow: flow, step: adaptedStep)
-        willNavigateBridge.yield(event)
+        willNavigateBridge.send(event)
 
-        let contributors = await flow.navigate(to: adaptedStep)
-        didNavigateBridge.yield(event)
+        // 네비게이션 수행
+        let contributors = flow.navigate(to: adaptedStep)
 
-        await registerContributors(contributors, in: flow)
+        // didNavigate 이벤트 발생
+        didNavigateBridge.send(event)
+
+        // FlowContributors 처리
+        await handleFlowContributors(contributors, in: flow)
     }
 
-    private func registerContributors<F: Flow>(
-        _ contributors: FlowContributors<F.StepType>,
-        in flow: F
-    ) async {
+    /// FlowContributors 처리
+    private func handleFlowContributors(_ contributors: FlowContributors, in flow: Flow) async {
         switch contributors {
         case .none:
             break
-        case let .one(contributor):
-            await registerContributor(contributor, in: flow)
-        case let .multiple(contributorList):
-            await withTaskGroup(of: Void.self) { group in
-                for contributor in contributorList {
-                    group.addTask { await self.registerContributor(contributor, in: flow) }
+
+        case let .one(flowContributor):
+            await handleFlowContributor(flowContributor, in: flow)
+
+        case let .multiple(flowContributors):
+            for contributor in flowContributors {
+                await handleFlowContributor(contributor, in: flow)
+            }
+
+        case let .end(forwardToParentFlowWithStep):
+            // 부모 Flow에 Step 전달
+            parentFlowCoordinator?.stepsSubject.send(forwardToParentFlowWithStep)
+            // 현재 FlowCoordinator 정리
+            cleanup()
+            // 부모에서 제거
+            parentFlowCoordinator?.childFlowCoordinators.removeValue(forKey: identifier)
+        }
+    }
+
+    /// 개별 FlowContributor 처리
+    private func handleFlowContributor(_ contributor: FlowContributor, in flow: Flow) async {
+        switch contributor {
+        case let .contribute(presentable, stepper, allowStepWhenNotPresented, allowStepWhenDismissed):
+            // 자식 Flow인 경우
+            if let childFlow = presentable as? Flow {
+                let childCoordinator = FlowCoordinator()
+                childCoordinator.parentFlowCoordinator = self
+                childFlowCoordinators[childCoordinator.identifier] = childCoordinator
+                childCoordinator.coordinate(
+                    flow: childFlow,
+                    with: stepper,
+                    allowStepWhenDismissed: allowStepWhenDismissed
+                )
+
+                // Flow readiness 설정
+                setReadiness(for: flow, basedOn: [presentable])
+            } else {
+                // 일반 Presentable인 경우
+                // initialStep 즉시 처리
+                let initialStep = stepper.initialStep
+                if !(initialStep is NoneStep) {
+                    await handleStep(initialStep, in: flow)
                 }
+
+                // readyToEmitSteps 호출
+                stepper.readyToEmitSteps()
+
+                // 이후 Step 이벤트 구독
+                startListeningToPresentableStepperEvents(
+                    presentable: presentable,
+                    stepper: stepper,
+                    in: flow,
+                    allowStepWhenNotPresented: allowStepWhenNotPresented,
+                    allowStepWhenDismissed: allowStepWhenDismissed
+                )
+            }
+
+        case let .forwardToCurrentFlow(step):
+            // 비동기로 현재 Flow에 Step 전달
+            Task { @MainActor [weak self] in
+                self?.stepsSubject.send(step)
+            }
+
+        case let .forwardToParentFlow(step):
+            // 부모 Flow에 Step 전달
+            parentFlowCoordinator?.stepsSubject.send(step)
+        }
+    }
+
+    /// Presentable/Stepper 이벤트 구독 (initialStep 제외)
+    private func startListeningToPresentableStepperEvents(
+        presentable: Presentable,
+        stepper: Stepper,
+        in _: Flow,
+        allowStepWhenNotPresented: Bool,
+        allowStepWhenDismissed: Bool
+    ) {
+        let taskId = UUID()
+        let task = Task { [weak self, weak stepper] in
+            guard let stepper = stepper else { return }
+
+            // Stepper의 steps 스트림 구독
+            for await step in stepper.steps.stream {
+                guard !Task.isCancelled else { break }
+
+                if step is NoneStep { continue }
+
+                // allowStepWhenNotPresented 체크
+                if !allowStepWhenNotPresented {
+                    // isVisibleStream의 현재 상태 확인은 복잡하므로 일단 항상 허용
+                    // TODO: 필요시 pausable 로직 구현
+                }
+
+                self?.stepsSubject.send(step)
+            }
+
+            self?.removeTask(taskId)
+        }
+
+        activeTasks[taskId] = task
+
+        // Presentable dismiss 시 구독 해제
+        if !allowStepWhenDismissed {
+            let dismissTaskId = UUID()
+            let dismissTask = Task { [weak self] in
+                for await _ in presentable.onDismissed {
+                    self?.activeTasks[taskId]?.cancel()
+                    break
+                }
+
+                self?.removeTask(dismissTaskId)
+            }
+            activeTasks[dismissTaskId] = dismissTask
+        }
+    }
+
+    /// Flow readiness 설정
+    private func setReadiness(for flow: Flow, basedOn presentables: [Presentable]) {
+        let childFlows = presentables.compactMap { $0 as? Flow }
+
+        if childFlows.isEmpty {
+            flow.flowReadySubject.send(true)
+        } else {
+            Task { @MainActor [weak flow] in
+                // 모든 자식 Flow가 ready될 때까지 대기
+                for childFlow in childFlows {
+                    for await ready in childFlow.flowReady {
+                        if ready { break }
+                    }
+                }
+                flow?.flowReadySubject.send(true)
             }
         }
     }
 
-    private func registerContributor<F: Flow>(
-        _ contributor: FlowContributor<F.StepType>,
-        in flow: F
-    ) async {
-        guard case let .contribute(presentable, stepper) = contributor else { return }
-
-        if let childFlow = presentable as? F {
-            coordinate(flow: childFlow, with: stepper)
-        } else {
-            startListening(to: stepper, in: flow, presentable: presentable)
+    /// 네비게이션 이벤트를 부모에게 전파
+    private func forwardNavigationEvents(to parent: FlowCoordinator) {
+        Task { @MainActor [weak self, weak parent] in
+            guard let stream = self?.willNavigateBridge.stream else { return }
+            for await event in stream {
+                parent?.willNavigateBridge.send(event)
+            }
         }
+
+        Task { @MainActor [weak self, weak parent] in
+            guard let stream = self?.didNavigateBridge.stream else { return }
+            for await event in stream {
+                parent?.didNavigateBridge.send(event)
+            }
+        }
+    }
+
+    /// Task 제거
+    private func removeTask(_ id: UUID) {
+        activeTasks[id]?.cancel()
+        activeTasks.removeValue(forKey: id)
+    }
+
+    /// 정리
+    private func cleanup() {
+        // 모든 활성 Task 취소
+        for task in activeTasks.values {
+            task.cancel()
+        }
+        activeTasks.removeAll()
+
+        // 모든 자식 FlowCoordinator 정리
+        for child in childFlowCoordinators.values {
+            child.cleanup()
+        }
+        childFlowCoordinators.removeAll()
     }
 }
 
-// MARK: - Supporting Types
+// MARK: - NavigationEvent
 
 /// 네비게이션 이벤트
 public struct NavigationEvent: Sendable {
     public let flowType: String
     public let stepDescription: String
 
-    init<F: Flow>(flow: F, step: F.StepType) {
+    init(flow: Flow, step: Step) {
         flowType = String(describing: type(of: flow))
         stepDescription = String(describing: step)
     }

@@ -22,14 +22,13 @@ import Foundation
 ///     let store = FlowTestStore(flow: flow)
 ///
 ///     // Step 전달
-///     let contributors = await store.navigate(to: .movieList)
+///     let contributors = await store.navigate(to: MovieStep.movieList)
 ///
 ///     // 검증
-///     #expect(store.steps == [.movieList])
+///     #expect(store.steps.count == 1)
 ///
-///     if case .one(.contribute(let presentable, let stepper)) = contributors {
-///         #expect(presentable.viewController is MovieListViewController)
-///         #expect(stepper is MovieListViewModel)
+///     if case .one(.contribute(let presentable, let stepper, _, _)) = contributors {
+///         #expect(presentable is UIViewController)
 ///     } else {
 ///         Issue.record("Expected one contributor")
 ///     }
@@ -38,21 +37,21 @@ import Foundation
 @MainActor
 public final class FlowTestStore<F: Flow> {
     public let flow: F
-    public private(set) var steps: [F.StepType] = []
-    public private(set) var contributors: [FlowContributors<F.StepType>] = []
+    public private(set) var steps: [Step] = []
+    public private(set) var contributors: [FlowContributors] = []
 
     public init(flow: F) {
         self.flow = flow
     }
 
-    public func navigate(to step: F.StepType) async -> FlowContributors<F.StepType> {
+    public func navigate(to step: Step) -> FlowContributors {
         steps.append(step)
-        let result = await flow.navigate(to: step)
+        let result = flow.navigate(to: step)
         contributors.append(result)
         return result
     }
 
-    public func adapt(step: F.StepType) async -> F.StepType? {
+    public func adapt(step: Step) async -> Step {
         await flow.adapt(step: step)
     }
 

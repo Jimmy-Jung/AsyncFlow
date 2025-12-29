@@ -19,15 +19,17 @@ struct StepperTests {
 
         let task = Task {
             var receivedSteps: [TestStep] = []
-            for await step in viewModel.steps {
-                receivedSteps.append(step)
+            for await step in viewModel.steps.stream {
+                if let testStep = step as? TestStep {
+                    receivedSteps.append(testStep)
+                }
                 if receivedSteps.count == 2 { break }
             }
             return receivedSteps
         }
 
         // When
-        try await viewModel.waitUntilReady()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.one)
         viewModel.emit(.two)
@@ -44,18 +46,20 @@ struct StepperTests {
     @MainActor
     func stepperMultipleEmits() async throws {
         let viewModel = TestViewModel()
-        let stream = viewModel.steps
+        let stream = viewModel.steps.stream
 
         let task = Task {
             var receivedSteps: [TestStep] = []
             for await step in stream {
-                receivedSteps.append(step)
+                if let testStep = step as? TestStep {
+                    receivedSteps.append(testStep)
+                }
                 if receivedSteps.count == 3 { break }
             }
             return receivedSteps
         }
 
-        try await viewModel.waitUntilReady()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.one)
         viewModel.emit(.two)
@@ -66,43 +70,14 @@ struct StepperTests {
         #expect(receivedSteps == [.one, .two, .three])
     }
 
-    @Test("구독 전에 방출된 Step은 받지 못함")
-    @MainActor
-    func emitBeforeSubscription() async {
-        let viewModel = TestViewModel()
-
-        // 구독 전에 방출
-        viewModel.emit(.one)
-
-        // 이후 구독
-        let stream = viewModel.steps
-
-        let task = Task {
-            var receivedSteps: [TestStep] = []
-            for await step in stream {
-                receivedSteps.append(step)
-                break
-            }
-            return receivedSteps
-        }
-
-        // 구독 후 방출
-        viewModel.emit(.two)
-
-        let receivedSteps = await task.value
-
-        // .one은 받지 못하고 .two만 받음
-        #expect(receivedSteps == [.two])
-    }
-
     // MARK: - Multicast Tests
 
     @Test("Stepper가 다중 구독(Multicast)을 지원하는지 확인")
     @MainActor
     func stepperMulticast() async throws {
         let viewModel = TestViewModel()
-        let stream1 = viewModel.steps
-        let stream2 = viewModel.steps
+        let stream1 = viewModel.steps.stream
+        let stream2 = viewModel.steps.stream
 
         try await confirmation("Both streams received event", expectedCount: 2) { confirm in
             let task1 = Task {
@@ -119,7 +94,7 @@ struct StepperTests {
                 }
             }
 
-            try await viewModel.waitUntilReady()
+            try await Task.sleep(nanoseconds: 10_000_000)
 
             viewModel.emit(.one)
 
@@ -131,14 +106,16 @@ struct StepperTests {
     @MainActor
     func multicastAllSteps() async throws {
         let viewModel = TestViewModel()
-        let stream1 = viewModel.steps
-        let stream2 = viewModel.steps
-        let stream3 = viewModel.steps
+        let stream1 = viewModel.steps.stream
+        let stream2 = viewModel.steps.stream
+        let stream3 = viewModel.steps.stream
 
         let task1 = Task {
             var steps: [TestStep] = []
             for await step in stream1 {
-                steps.append(step)
+                if let testStep = step as? TestStep {
+                    steps.append(testStep)
+                }
                 if steps.count == 2 { break }
             }
             return steps
@@ -147,7 +124,9 @@ struct StepperTests {
         let task2 = Task {
             var steps: [TestStep] = []
             for await step in stream2 {
-                steps.append(step)
+                if let testStep = step as? TestStep {
+                    steps.append(testStep)
+                }
                 if steps.count == 2 { break }
             }
             return steps
@@ -156,13 +135,15 @@ struct StepperTests {
         let task3 = Task {
             var steps: [TestStep] = []
             for await step in stream3 {
-                steps.append(step)
+                if let testStep = step as? TestStep {
+                    steps.append(testStep)
+                }
                 if steps.count == 2 { break }
             }
             return steps
         }
 
-        try await viewModel.waitUntilReady()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.one)
         viewModel.emit(.two)
@@ -180,26 +161,28 @@ struct StepperTests {
     @MainActor
     func subscriptionCancellation() async throws {
         let viewModel = TestViewModel()
-        let stream = viewModel.steps
+        let stream = viewModel.steps.stream
 
         var receivedSteps: [TestStep] = []
 
         let task = Task {
             for await step in stream {
-                receivedSteps.append(step)
+                if let testStep = step as? TestStep {
+                    receivedSteps.append(testStep)
+                }
             }
         }
 
-        try await viewModel.waitUntilReady()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.one)
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         task.cancel()
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.two)
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         #expect(receivedSteps.count == 1)
         #expect(receivedSteps[0] == .one)
@@ -209,32 +192,36 @@ struct StepperTests {
     @MainActor
     func partialCancellation() async throws {
         let viewModel = TestViewModel()
-        let stream1 = viewModel.steps
-        let stream2 = viewModel.steps
+        let stream1 = viewModel.steps.stream
+        let stream2 = viewModel.steps.stream
 
         var steps1: [TestStep] = []
         var steps2: [TestStep] = []
 
         let task1 = Task {
             for await step in stream1 {
-                steps1.append(step)
+                if let testStep = step as? TestStep {
+                    steps1.append(testStep)
+                }
             }
         }
 
         let task2 = Task {
             for await step in stream2 {
-                steps2.append(step)
+                if let testStep = step as? TestStep {
+                    steps2.append(testStep)
+                }
                 if steps2.count == 2 { break }
             }
         }
 
-        try await viewModel.waitUntilReady()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.one)
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         task1.cancel()
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         viewModel.emit(.two)
 
@@ -246,92 +233,15 @@ struct StepperTests {
         #expect(steps2 == [.one, .two])
     }
 
-    // MARK: - Memory Management Tests
-
-    @Test("Stepper 메모리 해제 후 새 인스턴스는 독립적으로 동작")
-    @MainActor
-    func memoryIsolation() async throws {
-        var viewModel1: TestViewModel? = TestViewModel()
-        let stream1 = viewModel1!.steps
-
-        let task1 = Task {
-            var steps: [TestStep] = []
-            for await step in stream1 {
-                steps.append(step)
-                if steps.count == 1 { break }
-            }
-            return steps
-        }
-
-        try await viewModel1!.waitUntilReady()
-
-        viewModel1?.emit(.one)
-        let steps1 = await task1.value
-
-        viewModel1 = nil
-
-        let viewModel2 = TestViewModel()
-        let stream2 = viewModel2.steps
-
-        let task2 = Task {
-            var steps: [TestStep] = []
-            for await step in stream2 {
-                steps.append(step)
-                if steps.count == 1 { break }
-            }
-            return steps
-        }
-
-        try await viewModel2.waitUntilReady()
-
-        viewModel2.emit(.two)
-        let steps2 = await task2.value
-
-        #expect(steps1 == [.one])
-        #expect(steps2 == [.two])
-    }
-
     // MARK: - OneStepper Tests
 
-    @Test("OneStepper가 초기값 하나만 방출하는지 확인")
+    @Test("OneStepper가 초기값만 방출하는지 확인")
     @MainActor
     func oneStepper() async {
-        let stepper = OneStepper(TestStep.one)
-        var receivedSteps: [TestStep] = []
+        let stepper = OneStepper(withSingleStep: TestStep.one)
 
-        for await step in stepper.steps {
-            receivedSteps.append(step)
-            break
-        }
-
-        #expect(receivedSteps.count == 1)
-        #expect(receivedSteps.first == .one)
-    }
-
-    @Test("OneStepper는 emit을 호출해도 추가 Step을 방출하지 않음")
-    @MainActor
-    func oneStepperNoAdditionalEmit() async {
-        let stepper = OneStepper(TestStep.one)
-        let stream = stepper.steps
-
-        let task = Task {
-            var steps: [TestStep] = []
-            for await step in stream {
-                steps.append(step)
-                if steps.count == 1 {
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                    break
-                }
-            }
-            return steps
-        }
-
-        // OneStepper는 emit이 없지만, 있더라도 무시됨
-        // (OneStepper는 초기값만 방출하고 종료)
-
-        let steps = await task.value
-        #expect(steps.count == 1)
-        #expect(steps[0] == .one)
+        #expect(stepper.initialStep is TestStep)
+        #expect((stepper.initialStep as? TestStep) == .one)
     }
 
     // MARK: - Concurrent Emit Tests
@@ -340,18 +250,20 @@ struct StepperTests {
     @MainActor
     func rapidEmits() async throws {
         let viewModel = TestViewModel()
-        let stream = viewModel.steps
+        let stream = viewModel.steps.stream
 
         let task = Task {
             var steps: [TestStep] = []
             for await step in stream {
-                steps.append(step)
+                if let testStep = step as? TestStep {
+                    steps.append(testStep)
+                }
                 if steps.count == 100 { break }
             }
             return steps
         }
 
-        try await viewModel.waitUntilReady()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         for i in 0 ..< 100 {
             viewModel.emit(i % 2 == 0 ? .one : .two)

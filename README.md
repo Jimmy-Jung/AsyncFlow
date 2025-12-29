@@ -16,20 +16,27 @@ AsyncFlow는 [RxFlow](https://github.com/RxSwiftCommunity/RxFlow)에서 영감�
 | 특징 | RxFlow | AsyncFlow |
 |------|--------|-----------|
 | 비동기 처리 | RxSwift Observable | Swift Concurrency (async/await) |
-| Step 스트림 | `PublishRelay<Step>` | `AsyncStream<Step>` |
+| Step 스트림 | `PublishRelay<Step>` | `AsyncPassthroughSubject<Step>` (버퍼링 지원) |
+| Step 타입 | Generic `StepType` | Type-erased `Step` 프로토콜 |
 | 스레드 안전성 | subscribeOn/observeOn | `@MainActor` |
 | 외부 의존성 | RxSwift, RxRelay | 없음 (Swift 표준만 사용) |
 | 메모리 관리 | DisposeBag | Task 자동 취소 |
 | 프로젝트 관리 | CocoaPods/Carthage | Tuist |
+| Property Wrapper | 없음 | `@Steps` 제공 |
+| FlowContributor | Generic | Type-erased |
 
 ### 주요 특징
 
-- ✅ RxSwift 의존성 제거, Swift Concurrency만 사용
-- ✅ [AsyncViewModel](https://github.com/Jimmy-Jung/AsyncViewModel)과 자연스러운 통합
-- ✅ 선언적이고 테스트 가능한 네비게이션
-- ✅ 타입 안전성 보장
-- ✅ Deep Link, 권한 체크 등 고급 기능 지원
-- ✅ Tuist 기반 프로젝트 관리
+- ✅ **RxFlow와 동일한 로직**: RxFlow의 모든 패턴을 Swift Concurrency로 구현
+- ✅ **RxSwift 의존성 제거**: Swift Concurrency만 사용
+- ✅ **Type-erased Step**: Generic 제약 없이 유연한 네비게이션
+- ✅ **버퍼링 지원**: 구독 전 Step도 안전하게 처리 (ReplaySubject 패턴)
+- ✅ **Property Wrapper**: `@Steps`로 간결한 Stepper 선언
+- ✅ **FlowContributor 패턴**: `.forwardToCurrentFlow`, `.forwardToParentFlow`, `.end` 지원
+- ✅ **[AsyncViewModel](https://github.com/Jimmy-Jung/AsyncViewModel) 통합**: 자연스러운 단방향 데이터 흐름
+- ✅ **선언적이고 테스트 가능**: Swift Testing 프레임워크 지원
+- ✅ **Deep Link, 권한 체크**: 고급 기능 지원
+- ✅ **Tuist 기반**: 모듈화된 프로젝트 관리
 
 ---
 
@@ -105,7 +112,7 @@ dependencies: [
 
 ## 핵심 개념
 
-AsyncFlow는 6가지 핵심 타입으로 구성됩니다:
+AsyncFlow는 7가지 핵심 타입으로 구성됩니다:
 
 ### 1. Step
 
@@ -127,8 +134,17 @@ Step을 방출하는 주체 (주로 ViewModel)
 ```swift
 @MainActor
 final class MovieListViewModel: ObservableObject, Stepper {
-    @StepEmitter var stepEmitter: StepEmitter<MovieStep>
+    @Steps var steps  // Property wrapper로 간단하게 선언
+    
     @Published var state = State()
+    
+    var initialStep: Step {
+        NoneStep()  // 기본값: 초기 Step 없음
+    }
+    
+    func readyToEmitSteps() {
+        // FlowCoordinator가 Stepper를 구독할 때 호출됨
+    }
     
     enum Input: Sendable {
         case movieTapped(id: Int)
@@ -141,7 +157,7 @@ final class MovieListViewModel: ObservableObject, Stepper {
     func send(_ input: Input) {
         switch input {
         case let .movieTapped(id):
-            emit(.movieDetail(id: id))  // ← Step 방출!
+            steps.send(MovieStep.movieDetail(id: id))  // ← Step 방출!
         }
     }
 }
@@ -160,14 +176,23 @@ extension UIViewController: Presentable {}  // 자동 구현됨
 네비게이션 영역 정의 및 Step → 네비게이션 액션 변환
 
 ```swift
+@MainActor
 final class MovieFlow: Flow {
-    typealias StepType = MovieStep
-    
     var root: any Presentable { navigationController }
     private let navigationController = UINavigationController()
     
-    func navigate(to step: MovieStep) async -> FlowContributors<MovieStep> {
-        switch step {
+    // Step 필터링/변환 (선택사항)
+    func adapt(step: Step) async -> Step {
+        guard let movieStep = step as? MovieStep else { return step }
+        // 권한 체크, 인증 체크 등 수행 가능
+        return movieStep
+    }
+    
+    // 네비게이션 수행
+    func navigate(to step: Step) -> FlowContributors {
+        guard let movieStep = step as? MovieStep else { return .none }
+        
+        switch movieStep {
         case .movieList:
             return navigateToMovieList()
         case .movieDetail(let id):
@@ -175,12 +200,15 @@ final class MovieFlow: Flow {
         }
     }
     
-    private func navigateToMovieList() -> FlowContributors<MovieStep> {
+    private func navigateToMovieList() -> FlowContributors {
         let viewModel = MovieListViewModel()
         let viewController = MovieListViewController(viewModel: viewModel)
         navigationController.setViewControllers([viewController], animated: false)
         
-        return .one(.contribute(presentable: viewController, stepper: viewModel))
+        return .one(flowContributor: .contribute(
+            withNextPresentable: viewController,
+            withNextStepper: viewModel
+        ))
     }
 }
 ```
@@ -190,11 +218,32 @@ final class MovieFlow: Flow {
 다음 Stepper와 Presentable 연결
 
 ```swift
-return .one(.contribute(presentable: viewController, stepper: viewModel))
-return .multiple([
-    .contribute(presentable: movieFlow, stepper: movieStepper),
-    .contribute(presentable: watchedFlow, stepper: watchedStepper)
+// 단일 Contributor
+return .one(flowContributor: .contribute(
+    withNextPresentable: viewController,
+    withNextStepper: viewModel
+))
+
+// 여러 Contributor (예: TabBarController)
+return .multiple(flowContributors: [
+    .contribute(
+        withNextPresentable: dashboardFlow,
+        withNextStepper: dashboardStepper
+    ),
+    .contribute(
+        withNextPresentable: settingsFlow,
+        withNextStepper: settingsStepper
+    )
 ])
+
+// 현재 Flow에 Step 전달
+return .one(flowContributor: .forwardToCurrentFlow(withStep: MovieStep.movieList))
+
+// 부모 Flow에 Step 전달
+return .one(flowContributor: .forwardToParentFlow(withStep: MovieStep.logout))
+
+// Flow 종료 및 부모에 Step 전달
+return .end(forwardToParentFlowWithStep: MovieStep.main)
 ```
 
 ### 6. FlowCoordinator
@@ -206,6 +255,7 @@ return .multiple([
 class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     let coordinator = FlowCoordinator()
+    var appFlow: AppFlow?  // Strong reference 유지
     
     func application(
         _ application: UIApplication,
@@ -214,12 +264,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         window = UIWindow(frame: UIScreen.main.bounds)
         
         let appFlow = AppFlow(window: window!)
-        let appStepper = OneStepper(MovieStep.appLaunch)
+        self.appFlow = appFlow  // Strong reference 저장
+        
+        let appStepper = OneStepper(withSingleStep: MovieStep.appLaunch)
         coordinator.coordinate(flow: appFlow, with: appStepper)
         
         return true
     }
 }
+```
+
+### 7. OneStepper & CompositeStepper
+
+초기 Step을 방출하는 유틸리티 Stepper
+
+```swift
+// 단일 Step 방출
+let stepper = OneStepper(withSingleStep: MovieStep.movieList)
+
+// 여러 Stepper 조합
+let stepper1 = OneStepper(withSingleStep: MovieStep.movieList)
+let stepper2 = OneStepper(withSingleStep: MovieStep.watchedList)
+let compositeStepper = CompositeStepper(steppers: [stepper1, stepper2])
 ```
 
 ---
@@ -261,8 +327,14 @@ AsyncFlow는 AsyncViewModel과 자연스럽게 통합됩니다.
 
 ```swift
 @AsyncViewModel
-final class LoginViewModel: Stepper {
-    typealias StepType = AuthStep
+final class LoginViewModel: ObservableObject, Stepper {
+    @Steps var steps  // Property wrapper로 선언
+    
+    var initialStep: Step {
+        NoneStep()  // 기본값
+    }
+    
+    func readyToEmitSteps() {}
     
     func reduce(state: inout State, action: Action) -> [AsyncEffect<Action, CancelID>] {
         switch action {
@@ -276,14 +348,114 @@ final class LoginViewModel: Stepper {
             ]
         case .loginSuccess:
             state.isLoading = false
-            emit(.loginCompleted)  // ← Step 방출!
+            steps.send(AuthStep.loginCompleted)  // ← Step 방출!
             return []
         }
     }
 }
 ```
 
-`Stepper` 프로토콜을 채택하면 `steps` 스트림과 `emit(_:)` 메서드가 자동으로 제공됩니다.
+`Stepper` 프로토콜을 채택하면 `@Steps` property wrapper를 사용하여 Step을 방출할 수 있습니다.
+
+---
+
+## 고급 사용법
+
+### 자식 Flow 사용
+
+```swift
+@MainActor
+final class AppFlow: Flow {
+    var root: any Presentable { window }
+    private let window: UIWindow
+    
+    func navigate(to step: Step) -> FlowContributors {
+        guard let appStep = step as? AppStep else { return .none }
+        
+        switch appStep {
+        case .auth:
+            return navigateToAuth()
+        case .main:
+            return navigateToMain()
+        }
+    }
+    
+    private func navigateToAuth() -> FlowContributors {
+        let authFlow = AuthFlow()
+        window.rootViewController = authFlow.root.viewController
+        window.makeKeyAndVisible()
+        
+        // 자식 Flow를 Contributor로 반환 (자동으로 자식 FlowCoordinator 생성)
+        return .one(flowContributor: .contribute(
+            withNextPresentable: authFlow,
+            withNextStepper: OneStepper(withSingleStep: AppStep.auth(.loginRequired))
+        ))
+    }
+}
+```
+
+### 현재 Flow에 Step 전달
+
+```swift
+private func navigateToLaunch() -> FlowContributors {
+    if isLoggedIn {
+        return .one(flowContributor: .forwardToCurrentFlow(withStep: AppStep.main))
+    } else {
+        return .one(flowContributor: .forwardToCurrentFlow(withStep: AppStep.auth(.loginRequired)))
+    }
+}
+```
+
+### 부모 Flow에 Step 전달
+
+```swift
+@MainActor
+final class AuthFlow: Flow {
+    func navigate(to step: Step) -> FlowContributors {
+        guard let appStep = step as? AppStep else { return .none }
+        
+        switch appStep {
+        case .auth(.loginSuccess):
+            // AuthFlow 종료 및 부모 Flow에 main step 전달
+            return .end(forwardToParentFlowWithStep: AppStep.main)
+        }
+    }
+}
+```
+
+### Step 필터링 (adapt)
+
+```swift
+func adapt(step: Step) async -> Step {
+    guard let appStep = step as? AppStep else { return step }
+    
+    // 권한 체크
+    if case .dashboard(.featureDetail(let feature)) = appStep,
+       feature.requiresPermission {
+        let hasPermission = await permissionService.checkPermission(.camera)
+        if !hasPermission {
+            return AppStep.dashboard(.permissionRequired(
+                message: "권한이 필요합니다",
+                permission: .camera
+            ))
+        }
+    }
+    
+    return appStep
+}
+```
+
+### 여러 Flow 동기화
+
+```swift
+import AsyncFlow
+
+// 모든 Flow가 ready될 때까지 대기
+Flows.use(dashboardFlow, settingsFlow, when: .allReady) { dashboardRoot, settingsRoot in
+    // 두 Flow의 root ViewController가 모두 준비됨
+    tabBarController.setViewControllers([dashboardRoot, settingsRoot], animated: false)
+}
+```
 
 ---
 
@@ -303,13 +475,14 @@ sequenceDiagram
     
     User->>View: Tap Movie Cell
     View->>ViewModel: send(.movieTapped(id: 1))
-    ViewModel->>ViewModel: stepContinuation?.yield(.movieDetail(id: 1))
+    ViewModel->>ViewModel: steps.send(.movieDetail(id: 1))
     ViewModel->>Coordinator: Step 방출
+    Coordinator->>Flow: adapt(step: .movieDetail(id: 1))
     Coordinator->>Flow: navigate(to: .movieDetail(id: 1))
     Flow->>Flow: navigateToMovieDetail(id: 1)
     Flow->>Flow: Push MovieDetailViewController
-    Flow-->>Coordinator: .one(.contribute(presentable:stepper:))
-    Coordinator->>ViewModel: 새로운 Stepper 구독
+    Flow-->>Coordinator: .one(.contribute(withNextPresentable:withNextStepper:))
+    Coordinator->>ViewModel: 새로운 Stepper 구독 (initialStep 처리)
 ```
 
 ---
@@ -320,15 +493,16 @@ sequenceDiagram
 
 ```swift
 @Test
+@MainActor
 func testMovieFlowNavigation() async {
     let flow = MovieFlow()
     let store = FlowTestStore(flow: flow)
     
-    let contributors = await store.navigate(to: .movieList)
+    let contributors = store.navigate(to: MovieStep.movieList)
     
-    #expect(store.steps == [.movieList])
+    #expect(store.steps == [MovieStep.movieList])
     
-    if case .one(.contribute(let presentable, let stepper)) = contributors {
+    if case .one(flowContributor: .contribute(let presentable, let stepper)) = contributors {
         #expect(presentable.viewController is MovieListViewController)
         #expect(stepper is MovieListViewModel)
     }
@@ -341,26 +515,31 @@ func testMovieFlowNavigation() async {
 @Test
 @MainActor
 func testStepEmission() async throws {
-    let mockStepper = MockStepper<MovieStep>()
+    let mockStepper = MockStepper()
+    mockStepper.setInitialStep(MovieStep.movieList)
     
     let collectionTask = Task {
-        var steps: [MovieStep] = []
-        for await step in mockStepper.steps {
-            steps.append(step)
+        var steps: [Step] = []
+        for await step in mockStepper.steps.stream {
+            if let movieStep = step as? MovieStep {
+                steps.append(movieStep)
+            }
             if steps.count == 2 { break }
         }
         return steps
     }
     
     // 구독 시작 대기
-    try await Task.sleep(nanoseconds: 10_000_000)
+    await Task.yield()
     
-    mockStepper.emit(.movieList)
-    mockStepper.emit(.movieDetail(id: 1))
+    mockStepper.emit(MovieStep.movieList)
+    mockStepper.emit(MovieStep.movieDetail(id: 1))
     
     let receivedSteps = await collectionTask.value
     
-    #expect(receivedSteps == [.movieList, .movieDetail(id: 1)])
+    #expect(receivedSteps.count == 2)
+    #expect((receivedSteps[0] as? MovieStep) == .movieList)
+    #expect((receivedSteps[1] as? MovieStep) == .movieDetail(id: 1))
 }
 ```
 

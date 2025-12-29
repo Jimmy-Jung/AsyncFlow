@@ -11,17 +11,17 @@
     // MARK: - NSWindow + Presentable
 
     extension NSWindow: Presentable {
-        public var viewController: PlatformViewController {
-            contentViewController ?? NSViewController()
+        /// Window visibility 스트림
+        public var isVisibleStream: AsyncStream<Bool> {
+            AsyncStream { [weak self] continuation in
+                continuation.yield(self?.isVisible ?? false)
+            }
         }
 
-        public var isPresented: Bool { isVisible }
-
+        /// Window는 dismiss되지 않음
         public var onDismissed: AsyncStream<Void> {
             AsyncStream { _ in }
         }
-
-        public var allowStepWhenDismissed: Bool { true }
     }
 
 #endif

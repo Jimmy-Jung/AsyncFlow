@@ -18,9 +18,7 @@
 ///
 /// ```swift
 /// final class MovieFlow: Flow {
-///     typealias StepType = MovieStep
-///
-///     var root: any Presentable { navigationController }
+///     var root: Presentable { navigationController }
 ///     private let navigationController = UINavigationController()
 ///     private let services: AppServices
 ///
@@ -28,7 +26,9 @@
 ///         self.services = services
 ///     }
 ///
-///     func navigate(to step: MovieStep) async -> FlowContributors {
+///     func navigate(to step: Step) -> FlowContributors {
+///         guard let step = step as? MovieStep else { return .none }
+///
 ///         switch step {
 ///         case .movieList:
 ///             return navigateToMovieList()
@@ -42,31 +42,26 @@
 ///         let viewController = MovieListViewController(viewModel: viewModel)
 ///         navigationController.pushViewController(viewController, animated: true)
 ///
-///         return .one(.contribute(presentable: viewController, stepper: viewModel))
+///         return .one(flowContributor: .contribute(
+///             withNextPresentable: viewController,
+///             withNextStepper: viewModel
+///         ))
 ///     }
 /// }
 /// ```
 ///
 /// ## 책임
 ///
-/// 1. **UIViewController 생성 및 표시**: DI 컨테이너 역할
-/// 2. **자식 Flow 시작**: TabBar, Modal Flow 등
-/// 3. **Step 필터링**: 권한 체크, 로그인 확인 등
+/// 1. UIViewController 생성 및 표시: DI 컨테이너 역할
+/// 2. 자식 Flow 시작: TabBar, Modal Flow 등
+/// 3. Step 필터링: adapt(step:)을 통한 권한 체크, 로그인 확인 등
 @MainActor
-public protocol Flow: Presentable {
-    /// Step의 타입
-    associatedtype StepType: Step
-
+public protocol Flow: AnyObject, Presentable {
     /// Flow의 루트 Presentable
     ///
     /// 보통 UINavigationController, UITabBarController 등이 됩니다.
-    var root: any Presentable { get }
-
-    /// Step을 네비게이션 액션으로 변환
-    ///
-    /// - Parameter step: 처리할 Step
-    /// - Returns: 다음 Stepper와 Presentable을 포함하는 FlowContributors
-    func navigate(to step: StepType) async -> FlowContributors<StepType>
+    /// 이 프로퍼티는 항상 동일한 인스턴스를 반환해야 합니다.
+    var root: Presentable { get }
 
     /// Step 적응 (필터링/변환)
     ///
@@ -74,30 +69,65 @@ public protocol Flow: Presentable {
     /// 권한 체크, 로그인 확인 등의 로직을 구현할 수 있습니다.
     ///
     /// - Parameter step: 적응할 Step
-    /// - Returns: 적응된 Step (nil이면 네비게이션 취소)
+    /// - Returns: 적응된 Step (NoneStep을 반환하면 네비게이션 취소)
     ///
     /// ## 사용 예시
     ///
     /// ```swift
-    /// func adapt(step: MovieStep) async -> MovieStep? {
-    ///     switch step {
+    /// func adapt(step: Step) async -> Step {
+    ///     guard let movieStep = step as? MovieStep else { return step }
+    ///
+    ///     switch movieStep {
     ///     case .movieDetail:
     ///         // 권한 체크
-    ///         return await PermissionManager.isAuthorized() ? step : .unauthorized
+    ///         if await PermissionManager.isAuthorized() {
+    ///             return step
+    ///         } else {
+    ///             return MovieStep.unauthorized
+    ///         }
     ///     default:
     ///         return step
     ///     }
     /// }
     /// ```
-    func adapt(step: StepType) async -> StepType?
+    func adapt(step: Step) async -> Step
+
+    /// Step을 네비게이션 액션으로 변환
+    ///
+    /// - Parameter step: 처리할 Step
+    /// - Returns: 다음 Stepper와 Presentable을 포함하는 FlowContributors
+    func navigate(to step: Step) -> FlowContributors
 }
 
 // MARK: - Default Implementation
 
 public extension Flow {
-    func adapt(step: StepType) async -> StepType? { step }
+    func adapt(step: Step) async -> Step { step }
 
-    var viewController: PlatformViewController { root.viewController }
-    var isPresented: Bool { root.isPresented }
+    var isVisibleStream: AsyncStream<Bool> { root.isVisibleStream }
     var onDismissed: AsyncStream<Void> { root.onDismissed }
+}
+
+// MARK: - Flow Ready Subject
+
+private var flowReadySubjectKey: UInt8 = 0
+
+extension Flow {
+    /// Flow가 준비되었을 때 true를 방출하는 Subject
+    ///
+    /// 자식 Flow들이 모두 준비되면 true를 방출합니다.
+    var flowReadySubject: AsyncPassthroughSubject<Bool> {
+        if let subject = objc_getAssociatedObject(self, &flowReadySubjectKey) as? AsyncPassthroughSubject<Bool> {
+            return subject
+        }
+
+        let newSubject = AsyncPassthroughSubject<Bool>()
+        objc_setAssociatedObject(self, &flowReadySubjectKey, newSubject, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return newSubject
+    }
+
+    /// Flow가 준비되었을 때 완료되는 스트림
+    var flowReady: AsyncStream<Bool> {
+        flowReadySubject.stream
+    }
 }

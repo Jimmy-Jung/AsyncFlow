@@ -17,42 +17,58 @@ import Foundation
 /// let stepper1 = MovieListViewModel()
 /// let stepper2 = WatchedListViewModel()
 ///
-/// let composite = CompositeStepper([stepper1, stepper2])
+/// let composite = CompositeStepper(steppers: [stepper1, stepper2])
 /// coordinator.coordinate(flow: appFlow, with: composite)
 /// ```
 ///
 /// ## 주의사항
 ///
-/// - 모든 Stepper는 컴파일 타임에 동일한 StepType을 가져야 함
+/// - 모든 내부 Stepper의 initialStep이 순차적으로 방출됩니다.
+/// - 이후 모든 Stepper의 Step이 병합되어 방출됩니다.
 @MainActor
-public final class CompositeStepper<S: Step>: Stepper {
-    public typealias StepType = S
+public final class CompositeStepper: Stepper {
+    public let steps = AsyncPassthroughSubject<Step>()
 
-    @StepEmitter public var stepEmitter: StepEmitter<S>
+    private let innerSteppers: [Stepper]
+    private var observationTasks: [Task<Void, Never>] = []
 
-    private let stepperWrappers: [StepperWrapper<S>]
-
-    public init<S1: Stepper>(_ steppers: [S1]) where S1.StepType == S {
-        stepperWrappers = steppers.map(StepperWrapper.init)
-        stepperWrappers.forEach(observeSteps)
+    /// CompositeStepper 초기화
+    ///
+    /// - Parameter steppers: 조합할 Stepper 배열
+    public init(steppers: [Stepper]) {
+        innerSteppers = steppers
     }
 
-    private func observeSteps(from wrapper: StepperWrapper<S>) {
-        Task { @MainActor [weak self] in
-            for await step in wrapper.steps {
-                self?.emit(step)
+    public func readyToEmitSteps() {
+        // 모든 내부 Stepper의 initialStep 방출
+        for stepper in innerSteppers {
+            let initialStep = stepper.initialStep
+            if !(initialStep is NoneStep) {
+                steps.send(initialStep)
             }
         }
+
+        // 모든 내부 Stepper의 Step 구독
+        for stepper in innerSteppers {
+            let task = Task { @MainActor [weak self, weak stepper] in
+                guard let stepper = stepper else { return }
+
+                stepper.readyToEmitSteps()
+
+                for await step in stepper.steps.stream {
+                    guard !Task.isCancelled else { break }
+
+                    if step is NoneStep { continue }
+                    self?.steps.send(step)
+                }
+            }
+            observationTasks.append(task)
+        }
     }
-}
 
-// MARK: - Private Types
-
-@MainActor
-private final class StepperWrapper<S: Step> {
-    let steps: AsyncStream<S>
-
-    init<S1: Stepper>(_ stepper: S1) where S1.StepType == S {
-        steps = stepper.steps
+    deinit {
+        for task in observationTasks {
+            task.cancel()
+        }
     }
 }
