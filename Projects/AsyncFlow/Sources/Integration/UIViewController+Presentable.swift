@@ -61,7 +61,7 @@
         }
 
         private func cleanupDeallocatedObjects() {
-            storage = storage.filter { $0.value.owner != nil }
+            storage = storage.filter { _, box in box.owner != nil }
         }
     }
 

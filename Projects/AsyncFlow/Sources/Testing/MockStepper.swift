@@ -60,9 +60,7 @@ public final class MockStepper<S: Step>: Stepper {
     }
 
     public func emit(_ steps: [S]) {
-        for step in steps {
-            emit(step)
-        }
+        steps.forEach(emit)
     }
 
     public func emit(_ step: S, waitFor duration: TimeInterval) async {

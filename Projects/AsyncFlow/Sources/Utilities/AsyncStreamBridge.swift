@@ -71,19 +71,13 @@ public final class AsyncStreamBridge<Element: Sendable> {
 
     public func yield(_ value: Element) {
         guard !isFinished else { return }
-
-        for continuation in continuations.values {
-            continuation.yield(value)
-        }
+        continuations.values.forEach { $0.yield(value) }
     }
 
     public func finish() {
         guard !isFinished else { return }
-
         isFinished = true
-        for continuation in continuations.values {
-            continuation.finish()
-        }
+        continuations.values.forEach { $0.finish() }
         continuations.removeAll()
     }
 }
