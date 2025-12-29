@@ -33,21 +33,21 @@ public final class CompositeStepper<S: Step>: Stepper {
     private let stepperWrappers: [StepperWrapper<S>]
 
     public init<S1: Stepper>(_ steppers: [S1]) where S1.StepType == S {
-        stepperWrappers = steppers.map { StepperWrapper($0) }
+        stepperWrappers = steppers.map(StepperWrapper.init)
+        stepperWrappers.forEach(observeSteps)
+    }
 
-        for wrapper in stepperWrappers {
-            Task { @MainActor [weak self] in
-                for await step in wrapper.steps {
-                    self?.emit(step)
-                }
+    private func observeSteps(from wrapper: StepperWrapper<S>) {
+        Task { @MainActor [weak self] in
+            for await step in wrapper.steps {
+                self?.emit(step)
             }
         }
     }
 }
 
-// MARK: - Type Eraser
+// MARK: - Private Types
 
-/// Stepper의 타입 지우개
 @MainActor
 private final class StepperWrapper<S: Step> {
     let steps: AsyncStream<S>

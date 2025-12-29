@@ -43,20 +43,8 @@ import Foundation
 @MainActor
 public final class AsyncStreamBridge<Element: Sendable> {
     public var stream: AsyncStream<Element> {
-        AsyncStream { continuation in
-            if isFinished {
-                continuation.finish()
-                return
-            }
-
-            let id = UUID()
-            continuations[id] = continuation
-
-            continuation.onTermination = { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.continuations[id] = nil
-                }
-            }
+        AsyncStream { [weak self] continuation in
+            self?.setupContinuation(continuation)
         }
     }
 
@@ -64,6 +52,22 @@ public final class AsyncStreamBridge<Element: Sendable> {
     private var isFinished = false
 
     public init() {}
+
+    private func setupContinuation(_ continuation: AsyncStream<Element>.Continuation) {
+        guard !isFinished else {
+            continuation.finish()
+            return
+        }
+
+        let id = UUID()
+        continuations[id] = continuation
+
+        continuation.onTermination = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.continuations[id] = nil
+            }
+        }
+    }
 
     public func yield(_ value: Element) {
         guard !isFinished else { return }
