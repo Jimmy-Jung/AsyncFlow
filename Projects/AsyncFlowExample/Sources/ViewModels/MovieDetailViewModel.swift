@@ -11,9 +11,10 @@ import Combine
 import Foundation
 
 @MainActor
-final class MovieDetailViewModel: ObservableObject {
+final class MovieDetailViewModel: ObservableObject, Stepper {
     // MARK: - Published State
 
+    @StepEmitter var stepEmitter: StepEmitter<MovieStep>
     @Published var state = State()
 
     // MARK: - Types
@@ -30,7 +31,6 @@ final class MovieDetailViewModel: ObservableObject {
     // MARK: - Properties
 
     private let movieId: Int
-    private var stepContinuation: AsyncStream<MovieStep>.Continuation?
 
     // MARK: - Initialization
 
@@ -55,18 +55,6 @@ final class MovieDetailViewModel: ObservableObject {
             let movie = Movie.mockList.first { $0.id == movieId } ?? Movie.mock1
             state.movie = movie
             state.isLoading = false
-        }
-    }
-}
-
-// MARK: - Stepper
-
-extension MovieDetailViewModel: Stepper {
-    typealias StepType = MovieStep
-
-    var steps: AsyncStream<MovieStep> {
-        AsyncStream { [weak self] continuation in
-            self?.stepContinuation = continuation
         }
     }
 }

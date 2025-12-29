@@ -49,11 +49,9 @@ final class MovieListViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("🔍 MovieListViewController: viewDidLoad called")
         setupUI()
         bindViewModel()
         viewModel.send(.viewDidLoad)
-        print("🔍 MovieListViewController: Setup complete")
     }
 
     // MARK: - Setup
@@ -61,7 +59,6 @@ final class MovieListViewController: UIViewController {
     private func setupUI() {
         title = "Movies"
         view.backgroundColor = .systemBackground
-        print("🔍 MovieListViewController: setupUI - backgroundColor = \(view.backgroundColor?.description ?? "nil")")
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .search,
@@ -93,8 +90,6 @@ final class MovieListViewController: UIViewController {
     }
 
     private func render(state: MovieListViewModel.State) {
-        print("🔍 MovieListViewController: render - isLoading=\(state.isLoading), movies=\(state.movies.count)")
-
         if state.isLoading {
             activityIndicator.startAnimating()
         } else {

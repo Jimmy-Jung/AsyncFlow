@@ -1,0 +1,26 @@
+# Code Owners for AsyncFlow
+
+# 전체 프로젝트 기본 리뷰어
+* @Jimmy-Jung
+
+# AsyncFlow Core 라이브러리
+/Projects/AsyncFlow/ @Jimmy-Jung
+
+# Example 프로젝트
+/Projects/AsyncFlowExample/ @Jimmy-Jung
+
+# 문서
+/README.md @Jimmy-Jung
+/Projects/AsyncFlow/README.md @Jimmy-Jung
+
+# GitHub 설정
+/.github/ @Jimmy-Jung
+
+# CI/CD
+/.github/workflows/ @Jimmy-Jung
+
+# Tuist 설정
+/Tuist/ @Jimmy-Jung
+/Workspace.swift @Jimmy-Jung
+/Tuist.swift @Jimmy-Jung
+

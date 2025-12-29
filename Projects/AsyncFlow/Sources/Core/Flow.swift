@@ -95,21 +95,9 @@ public protocol Flow: Presentable {
 // MARK: - Default Implementation
 
 public extension Flow {
-    /// 기본 구현: Step을 그대로 반환
-    func adapt(step: StepType) async -> StepType? {
-        return step
-    }
+    func adapt(step: StepType) async -> StepType? { step }
 
-    /// Presentable 프로토콜 요구사항: Flow 자체가 Presentable
-    var viewController: PlatformViewController {
-        root.viewController
-    }
-
-    var isPresented: Bool {
-        root.isPresented
-    }
-
-    var onDismissed: AsyncStream<Void> {
-        root.onDismissed
-    }
+    var viewController: PlatformViewController { root.viewController }
+    var isPresented: Bool { root.isPresented }
+    var onDismissed: AsyncStream<Void> { root.onDismissed }
 }

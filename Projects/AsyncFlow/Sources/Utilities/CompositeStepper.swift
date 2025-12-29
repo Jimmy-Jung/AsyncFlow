@@ -28,26 +28,20 @@ import Foundation
 public final class CompositeStepper<S: Step>: Stepper {
     public typealias StepType = S
 
-    /// Step 스트림 (모든 Stepper의 Step 병합)
-    public var steps: AsyncStream<S> {
-        AsyncStream { continuation in
-            for wrapper in stepperWrappers {
-                Task {
-                    for await step in wrapper.steps {
-                        continuation.yield(step)
-                    }
-                }
-            }
-        }
-    }
+    @StepEmitter public var stepEmitter: StepEmitter<S>
 
     private let stepperWrappers: [StepperWrapper<S>]
 
-    /// CompositeStepper 초기화
-    ///
-    /// - Parameter steppers: 조합할 Stepper 배열
     public init<S1: Stepper>(_ steppers: [S1]) where S1.StepType == S {
         stepperWrappers = steppers.map { StepperWrapper($0) }
+
+        for wrapper in stepperWrappers {
+            Task { @MainActor [weak self] in
+                for await step in wrapper.steps {
+                    self?.emit(step)
+                }
+            }
+        }
     }
 }
 

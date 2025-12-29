@@ -42,11 +42,13 @@ import Foundation
 /// ```
 @MainActor
 public final class AsyncStreamBridge<Element: Sendable> {
-    // MARK: - Properties
-
-    /// 구독 가능한 스트림
     public var stream: AsyncStream<Element> {
         AsyncStream { continuation in
+            if isFinished {
+                continuation.finish()
+                return
+            }
+
             let id = UUID()
             continuations[id] = continuation
 
@@ -59,24 +61,22 @@ public final class AsyncStreamBridge<Element: Sendable> {
     }
 
     private var continuations: [UUID: AsyncStream<Element>.Continuation] = [:]
-
-    // MARK: - Initialization
+    private var isFinished = false
 
     public init() {}
 
-    // MARK: - Public Methods
-
-    /// 모든 구독자에게 값 전달
-    ///
-    /// - Parameter value: 전달할 값
     public func yield(_ value: Element) {
+        guard !isFinished else { return }
+
         for continuation in continuations.values {
             continuation.yield(value)
         }
     }
 
-    /// 스트림 종료
     public func finish() {
+        guard !isFinished else { return }
+
+        isFinished = true
         for continuation in continuations.values {
             continuation.finish()
         }

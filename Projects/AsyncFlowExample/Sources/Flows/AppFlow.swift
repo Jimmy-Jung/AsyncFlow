@@ -44,14 +44,8 @@ final class AppFlow: Flow {
         let movieFlow = MovieFlow()
         self.movieFlow = movieFlow
 
-        print("🔍 AppFlow: Setting rootViewController")
-        print("🔍 AppFlow: MovieFlow.root.viewController = \(movieFlow.root.viewController)")
-
         window.rootViewController = movieFlow.root.viewController
         window.makeKeyAndVisible()
-
-        print("🔍 AppFlow: Window is key: \(window.isKeyWindow)")
-        print("🔍 AppFlow: RootViewController: \(String(describing: window.rootViewController))")
 
         // MovieFlow 초기화
         let contributors = await movieFlow.navigate(to: .movieList)

@@ -31,10 +31,7 @@ public enum FlowContributors<S: Step> {
     case multiple([FlowContributor<S>])
 }
 
-// MARK: - Convenience Extensions
-
 public extension FlowContributors {
-    /// 여러 Contributor를 가변 인자로 생성
     static func multiple(_ contributors: FlowContributor<S>...) -> FlowContributors<S> {
         .multiple(contributors)
     }

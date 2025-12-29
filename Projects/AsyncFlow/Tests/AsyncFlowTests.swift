@@ -11,56 +11,53 @@ import Testing
 
 @Suite("AsyncFlow Core Tests")
 struct AsyncFlowTests {
-    @Test("OneStepper should emit initial step")
+    @Test("OneStepper 초기 Step 방출")
     @MainActor
-    func oneStepper() async throws {
+    func oneStepper() async {
+        // Given
         let stepper = OneStepper(TestStep.initial)
 
+        // When
         let task = Task {
             var steps: [TestStep] = []
             for await step in stepper.steps {
                 steps.append(step)
-                break // OneStepper는 한 번만 방출하므로 수신 후 종료
+                break
             }
             return steps
         }
 
         let receivedSteps = await task.value
 
+        // Then
         #expect(receivedSteps == [.initial])
     }
 
-    @Test("MockStepper should emit multiple steps")
+    @Test("MockStepper 여러 Step 방출")
     @MainActor
     func mockStepper() async throws {
+        // Given
         let stepper = MockStepper<TestStep>()
 
         let collectionTask = Task {
             var steps: [TestStep] = []
             for await step in stepper.steps {
                 steps.append(step)
-                if steps.count == 3 { break } // 3개 받고 종료
+                if steps.count == 3 { break }
             }
             return steps
         }
 
-        // 구독이 확실히 시작되도록 잠시 대기 (10ms)
+        // When
         try await Task.sleep(nanoseconds: 10 * 1_000_000)
 
         stepper.emit(.initial)
         stepper.emit(.detail(id: 1))
         stepper.emit(.detail(id: 2))
 
-        // 3개를 받을 때까지 대기 (타임아웃은 Task 내부 로직에 의존하거나 별도 처리 필요)
         let receivedSteps = await collectionTask.value
 
+        // Then
         #expect(receivedSteps == [.initial, .detail(id: 1), .detail(id: 2)])
     }
-}
-
-// MARK: - Test Fixtures
-
-enum TestStep: Step, Equatable {
-    case initial
-    case detail(id: Int)
 }

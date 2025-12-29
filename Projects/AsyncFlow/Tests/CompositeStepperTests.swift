@@ -11,34 +11,39 @@ import Testing
 
 @Suite("CompositeStepper Tests")
 struct CompositeStepperTests {
-    enum TestStep: Step, Equatable, Sendable {
-        case one
-        case two
-    }
-
-    @Test("CompositeStepper가 여러 Stepper의 이벤트를 병합하는지 확인")
+    @Test("CompositeStepper 여러 Stepper 이벤트 병합")
     @MainActor
-    func compositeStream() async throws {
+    func compositeStream() async {
+        // Given
         let stepper1 = MockStepper<TestStep>()
         let stepper2 = MockStepper<TestStep>()
-        let composite = CompositeStepper([stepper1, stepper2])
 
-        let stream = composite.steps
+        var stepper1Ready = false
+        var stepper2Ready = false
+
+        stepper1.onObservationStart = { stepper1Ready = true }
+        stepper2.onObservationStart = { stepper2Ready = true }
+
+        let composite = CompositeStepper([stepper1, stepper2])
 
         let task = Task {
             var receivedSteps: [TestStep] = []
-            for await step in stream {
+            for await step in composite.steps {
                 receivedSteps.append(step)
                 if receivedSteps.count == 2 { break }
             }
             return receivedSteps
         }
 
+        // When
+        await Test.waitUntil { stepper1Ready && stepper2Ready }
+
         stepper1.emit(.one)
         stepper2.emit(.two)
 
         let result = await task.value
 
+        // Then
         #expect(result.count == 2)
         #expect(result.contains(.one))
         #expect(result.contains(.two))

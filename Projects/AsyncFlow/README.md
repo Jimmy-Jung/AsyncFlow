@@ -27,8 +27,7 @@ AsyncFlow/
 │   │   ├── Flow.swift
 │   │   ├── FlowContributor.swift
 │   │   └── FlowCoordinator.swift
-│   ├── Integration/             # AsyncViewModel 통합
-│   │   ├── StepEmittable.swift
+│   ├── Integration/             # 플랫폼 통합
 │   │   └── UIViewController+Presentable.swift
 │   ├── Utilities/               # 헬퍼
 │   │   ├── AsyncStreamBridge.swift
@@ -58,7 +57,9 @@ enum MovieStep: Step {
 
 ```swift
 @AsyncViewModel
-final class MovieListViewModel: StepEmittable {
+final class MovieListViewModel: Stepper {
+    typealias StepType = MovieStep
+    
     func reduce(state: inout State, action: Action) -> [AsyncEffect<Action, CancelID>] {
         switch action {
         case .selectMovie(let id):

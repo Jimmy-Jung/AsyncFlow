@@ -3,8 +3,9 @@
 Swift Concurrency 기반 iOS 네비게이션 프레임워크
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/platform-iOS%2014%2B-lightgrey.svg)](https://developer.apple.com/ios/)
+[![Platform](https://img.shields.io/badge/platform-iOS%2015%2B%20%7C%20macOS%2012%2B-lightgrey.svg)](https://developer.apple.com/ios/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/Jimmy-Jung/AsyncFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/Jimmy-Jung/AsyncFlow/actions/workflows/ci.yml)
 
 ## 개요
 
@@ -48,7 +49,7 @@ AsyncFlow/
 │   │   ├── Project.swift
 │   │   ├── Sources/
 │   │   │   ├── Core/                    # 핵심 프로토콜
-│   │   │   ├── Integration/             # AsyncViewModel 통합
+│   │   │   ├── Integration/             # 플랫폼 통합
 │   │   │   ├── Utilities/               # 헬퍼
 │   │   │   └── Testing/                 # 테스트 도구
 │   │   └── Tests/
@@ -64,7 +65,6 @@ AsyncFlow/
 │       │   └── Views/                   # UIViewController
 │       └── Resources/
 │
-├── ARCHITECTURE.md                      # 아키텍처 문서
 ├── README.md                            # 프로젝트 소개
 └── LICENSE                              # MIT 라이선스
 ```
@@ -96,6 +96,11 @@ dependencies: [
 ]
 ```
 
+> **Note**: 1.0.0 릴리스 전에는 특정 커밋이나 브랜치를 사용하세요:
+> ```swift
+> .package(url: "https://github.com/Jimmy-Jung/AsyncFlow", branch: "main")
+> ```
+
 ---
 
 ## 핵심 개념
@@ -120,16 +125,35 @@ enum MovieStep: Step {
 Step을 방출하는 주체 (주로 ViewModel)
 
 ```swift
-@AsyncViewModel
-final class MovieListViewModel: StepEmittable {
-    typealias StepType = MovieStep
-    var stepContinuation: AsyncStream<MovieStep>.Continuation?
+@MainActor
+final class MovieListViewModel: ObservableObject {
+    @Published var state = State()
     
-    func reduce(state: inout State, action: Action) -> [AsyncEffect<Action, CancelID>] {
-        switch action {
-        case .selectMovie(let id):
-            emit(.movieDetail(id: id))  // ← Step 방출!
-            return []
+    enum Input: Sendable {
+        case movieTapped(id: Int)
+    }
+    
+    struct State: Equatable, Sendable {
+        var movies: [Movie] = []
+    }
+    
+    private var stepContinuation: AsyncStream<MovieStep>.Continuation?
+    
+    func send(_ input: Input) {
+        switch input {
+        case .movieTapped(let id):
+            stepContinuation?.yield(.movieDetail(id: id))  // ← Step 방출!
+        }
+    }
+}
+
+// MARK: - Stepper
+extension MovieListViewModel: Stepper {
+    typealias StepType = MovieStep
+    
+    var steps: AsyncStream<MovieStep> {
+        AsyncStream { [weak self] continuation in
+            self?.stepContinuation = continuation
         }
     }
 }
@@ -154,7 +178,7 @@ final class MovieFlow: Flow {
     var root: any Presentable { navigationController }
     private let navigationController = UINavigationController()
     
-    func navigate(to step: MovieStep) async -> FlowContributors {
+    func navigate(to step: MovieStep) async -> FlowContributors<MovieStep> {
         switch step {
         case .movieList:
             return navigateToMovieList()
@@ -163,10 +187,10 @@ final class MovieFlow: Flow {
         }
     }
     
-    private func navigateToMovieList() -> FlowContributors {
+    private func navigateToMovieList() -> FlowContributors<MovieStep> {
         let viewModel = MovieListViewModel()
         let viewController = MovieListViewController(viewModel: viewModel)
-        navigationController.pushViewController(viewController, animated: true)
+        navigationController.setViewControllers([viewController], animated: false)
         
         return .one(.contribute(presentable: viewController, stepper: viewModel))
     }
@@ -190,21 +214,48 @@ return .multiple([
 전체 네비게이션 조율자
 
 ```swift
+@main
 class AppDelegate: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
-    let coordinator = FlowCoordinator()
-    
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        guard let window = window else { return false }
+        return true
+    }
+    
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(
+            name: "Default Configuration",
+            sessionRole: connectingSceneSession.role
+        )
+        configuration.delegateClass = SceneDelegate.self
+        return configuration
+    }
+}
+
+// MARK: - SceneDelegate
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+    let coordinator = FlowCoordinator()
+    
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        guard let windowScene = scene as? UIWindowScene else { return }
         
+        let window = UIWindow(windowScene: windowScene)
+        self.window = window
+        
+        // App Flow 시작
         let appFlow = AppFlow(window: window)
         let appStepper = OneStepper(MovieStep.appLaunch)
         coordinator.coordinate(flow: appFlow, with: appStepper)
-        
-        return true
     }
 }
 ```
@@ -248,9 +299,8 @@ AsyncFlow는 AsyncViewModel과 자연스럽게 통합됩니다.
 
 ```swift
 @AsyncViewModel
-final class LoginViewModel: StepEmittable {
+final class LoginViewModel: Stepper {
     typealias StepType = AuthStep
-    var stepContinuation: AsyncStream<AuthStep>.Continuation?
     
     func reduce(state: inout State, action: Action) -> [AsyncEffect<Action, CancelID>] {
         switch action {
@@ -271,6 +321,8 @@ final class LoginViewModel: StepEmittable {
 }
 ```
 
+`Stepper` 프로토콜을 채택하면 `steps` 스트림과 `emit(_:)` 메서드가 자동으로 제공됩니다.
+
 ---
 
 ## 예제 앱
@@ -279,22 +331,23 @@ final class LoginViewModel: StepEmittable {
 
 ### 데이터 흐름
 
-```
-User Tap
-   ↓
-ViewModel.send(.movieTapped)
-   ↓
-transform: Input → Action
-   ↓
-reduce: Action → State + Step
-   ↓
-emit(.movieDetail(id))
-   ↓
-FlowCoordinator
-   ↓
-Flow.navigate(to:)
-   ↓
-Push MovieDetailViewController
+```mermaid
+sequenceDiagram
+    participant User
+    participant View
+    participant ViewModel
+    participant Coordinator as FlowCoordinator
+    participant Flow
+    
+    User->>View: Tap Movie Cell
+    View->>ViewModel: send(.movieTapped(id: 1))
+    ViewModel->>ViewModel: stepContinuation?.yield(.movieDetail(id: 1))
+    ViewModel->>Coordinator: Step 방출
+    Coordinator->>Flow: navigate(to: .movieDetail(id: 1))
+    Flow->>Flow: navigateToMovieDetail(id: 1)
+    Flow->>Flow: Push MovieDetailViewController
+    Flow-->>Coordinator: .one(.contribute(presentable:stepper:))
+    Coordinator->>ViewModel: 새로운 Stepper 구독
 ```
 
 ---
@@ -324,20 +377,26 @@ func testMovieFlowNavigation() async {
 
 ```swift
 @Test
-func testStepEmission() async {
+@MainActor
+func testStepEmission() async throws {
     let mockStepper = MockStepper<MovieStep>()
-    var receivedSteps: [MovieStep] = []
     
-    Task {
+    let collectionTask = Task {
+        var steps: [MovieStep] = []
         for await step in mockStepper.steps {
-            receivedSteps.append(step)
+            steps.append(step)
+            if steps.count == 2 { break }
         }
+        return steps
     }
+    
+    // 구독 시작 대기
+    try await Task.sleep(nanoseconds: 10_000_000)
     
     mockStepper.emit(.movieList)
     mockStepper.emit(.movieDetail(id: 1))
     
-    try await Task.sleep(for: .milliseconds(100))
+    let receivedSteps = await collectionTask.value
     
     #expect(receivedSteps == [.movieList, .movieDetail(id: 1)])
 }
@@ -347,7 +406,6 @@ func testStepEmission() async {
 
 ## 문서
 
-- [Architecture Guide](ARCHITECTURE.md) - 아키텍처 설계 원칙
 - [AsyncFlow Library](Projects/AsyncFlow/) - 라이브러리 코어
 - [AsyncFlowExample](Projects/AsyncFlowExample/) - 예제 앱
 

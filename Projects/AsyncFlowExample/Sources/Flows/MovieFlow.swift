@@ -43,12 +43,7 @@ final class MovieFlow: Flow {
         let viewModel = MovieListViewModel()
         let viewController = MovieListViewController(viewModel: viewModel)
 
-        print("🔍 MovieFlow: Creating MovieListViewController")
-        print("🔍 MovieFlow: ViewController = \(viewController)")
-
         navigationController.setViewControllers([viewController], animated: false)
-
-        print("🔍 MovieFlow: NavigationController.viewControllers = \(navigationController.viewControllers)")
 
         return .one(.contribute(presentable: viewController, stepper: viewModel))
     }

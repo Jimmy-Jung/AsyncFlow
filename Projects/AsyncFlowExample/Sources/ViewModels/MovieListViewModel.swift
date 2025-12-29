@@ -11,9 +11,10 @@ import Combine
 import Foundation
 
 @MainActor
-final class MovieListViewModel: ObservableObject {
+final class MovieListViewModel: ObservableObject, Stepper {
     // MARK: - Published State
 
+    @StepEmitter var stepEmitter: StepEmitter<MovieStep>
     @Published var state = State()
 
     // MARK: - Types
@@ -29,10 +30,6 @@ final class MovieListViewModel: ObservableObject {
         var isLoading: Bool = false
     }
 
-    // MARK: - Properties
-
-    private var stepContinuation: AsyncStream<MovieStep>.Continuation?
-
     // MARK: - Methods
 
     func send(_ input: Input) {
@@ -40,9 +37,9 @@ final class MovieListViewModel: ObservableObject {
         case .viewDidLoad:
             loadMovies()
         case let .movieTapped(id):
-            stepContinuation?.yield(.movieDetail(id: id))
+            emit(.movieDetail(id: id))
         case .searchButtonTapped:
-            stepContinuation?.yield(.search)
+            emit(.search)
         }
     }
 
@@ -53,18 +50,6 @@ final class MovieListViewModel: ObservableObject {
             try await Task.sleep(for: .seconds(0.5))
             state.movies = Movie.mockList
             state.isLoading = false
-        }
-    }
-}
-
-// MARK: - Stepper
-
-extension MovieListViewModel: Stepper {
-    typealias StepType = MovieStep
-
-    var steps: AsyncStream<MovieStep> {
-        AsyncStream { [weak self] continuation in
-            self?.stepContinuation = continuation
         }
     }
 }

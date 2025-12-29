@@ -33,15 +33,15 @@ import Foundation
 public final class OneStepper<S: Step>: Stepper {
     public typealias StepType = S
 
-    /// Step 스트림 (초기 Step만 한 번 방출)
+    @StepEmitter public var stepEmitter: StepEmitter<S>
+
+    private let initialStep: S
+
     public var steps: AsyncStream<S> {
         AsyncStream { continuation in
             continuation.yield(initialStep)
-            // 한 번만 방출하고 스트림 유지 (finish 하지 않음)
         }
     }
-
-    private let initialStep: S
 
     /// OneStepper 초기화
     ///

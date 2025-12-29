@@ -53,9 +53,6 @@ public protocol Presentable: AnyObject {
     var allowStepWhenDismissed: Bool { get }
 }
 
-// MARK: - Default Implementation
-
 public extension Presentable {
-    /// 기본적으로 Dismiss 후에도 Step 처리 허용
     var allowStepWhenDismissed: Bool { true }
 }

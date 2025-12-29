@@ -54,19 +54,17 @@ enum MovieStep: Step {
 }
 ```
 
-### 2. ViewModel (AsyncViewModel + StepEmittable)
+### 2. ViewModel (Stepper)
 
 ```swift
-@AsyncViewModel
-final class MovieListViewModel: StepEmittable {
+@MainActor
+final class MovieListViewModel: Stepper {
     typealias StepType = MovieStep
-    var stepContinuation: AsyncStream<MovieStep>.Continuation?
     
-    func reduce(state: inout State, action: Action) -> [AsyncEffect<Action, CancelID>] {
-        switch action {
-        case .selectMovie(let id):
+    func send(_ input: Input) {
+        switch input {
+        case .movieTapped(let id):
             emit(.movieDetail(id: id))  // Step 방출!
-            return []
         }
     }
 }

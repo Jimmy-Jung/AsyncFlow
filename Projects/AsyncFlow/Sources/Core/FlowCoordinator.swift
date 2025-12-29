@@ -50,12 +50,10 @@ public final class FlowCoordinator {
     private var tasks: [UUID: ContributorTasks] = [:]
 
     public init() {
-        // UIKit 환경이라면 자동으로 Swizzling 활성화 시도
         #if canImport(UIKit)
             UIViewController.enableAsyncFlowSwizzling()
         #endif
 
-        // AppKit 환경이라면 자동으로 Swizzling 활성화 시도
         #if canImport(AppKit)
             NSViewController.enableAsyncFlowSwizzling()
         #endif
@@ -74,48 +72,14 @@ public final class FlowCoordinator {
 
     // MARK: - Private Methods
 
-    /// Stepper의 Step 스트림을 감시
     private func startListening<F: Flow, S: Stepper>(
         to stepper: S,
         in flow: F,
         presentable: Presentable? = nil
     ) where F.StepType == S.StepType {
         let taskId = UUID()
-
-        // 1. Stepper 감시 Task
-        let stepperTask = Task { [weak self] in
-            // Task 종료 시 자동 정리 (Self-Cleaning)
-            defer { self?.removeTask(taskId) }
-
-            for await step in stepper.steps {
-                await self?.handleStep(step, in: flow)
-            }
-        }
-
-        // 2. Lifecycle 감시 Task (화면 닫힘 감지)
-        // Task는 구조체이므로 weak capture가 불가능하며, 불필요합니다.
-        // 그냥 캡처해도 순환 참조가 발생하지 않습니다.
-        var lifecycleTask: Task<Void, Never>?
-
-        if let presentable = presentable, presentable.allowStepWhenDismissed == false {
-            lifecycleTask = Task {
-                // Presentable이 닫힐 때까지 대기
-                for await _ in presentable.onDismissed {
-                    // 화면이 닫히면 Stepper도 중단
-                    stepperTask.cancel()
-                    break
-                }
-            }
-        } else if let presentable = presentable {
-            // allowStepWhenDismissed가 true라도(기본값), onDismissed가 발생하면
-            // 메모리 정리를 위해 감시할 필요가 있는지 확인해야 함.
-            lifecycleTask = Task {
-                for await _ in presentable.onDismissed {
-                    stepperTask.cancel()
-                    break
-                }
-            }
-        }
+        let stepperTask = createStepperTask(for: stepper, in: flow, taskId: taskId)
+        let lifecycleTask = createLifecycleTask(for: presentable, stepperTask: stepperTask)
 
         tasks[taskId] = ContributorTasks(
             stepperTask: stepperTask,
@@ -123,32 +87,50 @@ public final class FlowCoordinator {
         )
     }
 
+    private func createStepperTask<F: Flow, S: Stepper>(
+        for stepper: S,
+        in flow: F,
+        taskId: UUID
+    ) -> Task<Void, Never> where F.StepType == S.StepType {
+        Task { [weak self] in
+            defer { self?.removeTask(taskId) }
+            for await step in stepper.steps {
+                await self?.handleStep(step, in: flow)
+            }
+        }
+    }
+
+    private func createLifecycleTask(
+        for presentable: Presentable?,
+        stepperTask: Task<Void, Never>
+    ) -> Task<Void, Never>? {
+        guard let presentable = presentable else { return nil }
+
+        return Task {
+            for await _ in presentable.onDismissed {
+                stepperTask.cancel()
+                break
+            }
+        }
+    }
+
     private func removeTask(_ id: UUID) {
         tasks[id]?.cancel()
         tasks.removeValue(forKey: id)
     }
 
-    /// Step 처리
     private func handleStep<F: Flow>(
         _ step: F.StepType,
         in flow: F
     ) async {
-        // 1. Step 적응 (필터링/변환)
-        guard let adaptedStep = await flow.adapt(step: step) else {
-            return
-        }
+        guard let adaptedStep = await flow.adapt(step: step) else { return }
 
-        // 2. willNavigate 발행
         let event = NavigationEvent(flow: flow, step: adaptedStep)
         willNavigateBridge.yield(event)
 
-        // 3. 네비게이션 실행
         let contributors = await flow.navigate(to: adaptedStep)
-
-        // 4. didNavigate 발행
         didNavigateBridge.yield(event)
 
-        // 5. 새 Contributor 등록
         await registerContributors(contributors, in: flow)
     }
 
@@ -171,24 +153,16 @@ public final class FlowCoordinator {
         }
     }
 
-    /// 단일 FlowContributor 등록
     private func registerContributor<F: Flow>(
         _ contributor: FlowContributor<F.StepType>,
         in flow: F
     ) async {
-        switch contributor {
-        case let .contribute(presentable, stepper):
-            // Presentable이 Flow인 경우
-            if let childFlow = presentable as? F {
-                // Child Flow 시작
-                coordinate(flow: childFlow, with: stepper)
-            } else {
-                // ViewController인 경우
-                startListening(to: stepper, in: flow, presentable: presentable)
-            }
+        guard case let .contribute(presentable, stepper) = contributor else { return }
 
-        case .none:
-            break
+        if let childFlow = presentable as? F {
+            coordinate(flow: childFlow, with: stepper)
+        } else {
+            startListening(to: stepper, in: flow, presentable: presentable)
         }
     }
 }

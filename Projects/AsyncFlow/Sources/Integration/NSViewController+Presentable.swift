@@ -11,27 +11,18 @@
     // MARK: - NSViewController + Presentable
 
     extension NSViewController: Presentable {
-        /// NSViewController 자체를 반환
-        public var viewController: PlatformViewController {
-            return self
-        }
+        public var viewController: PlatformViewController { self }
 
-        /// 현재 화면에 표시 중인지 여부
         public var isPresented: Bool {
-            return view.window != nil
+            view.window != nil
         }
 
-        /// Dismiss 이벤트 스트림
-        ///
-        /// NSViewController가 화면에서 사라질 때 알림을 받습니다.
-        /// 이 기능이 동작하려면 `NSViewController.enableAsyncFlowSwizzling()`가 호출되어야 합니다.
         public var onDismissed: AsyncStream<Void> {
             dismissBridge.stream
         }
 
         // MARK: - Internal
 
-        /// Dismiss 이벤트를 전달하는 Bridge
         var dismissBridge: AsyncStreamBridge<Void> {
             let id = ObjectIdentifier(self)
 
@@ -77,7 +68,6 @@
     // MARK: - Swizzling Support
 
     public extension NSViewController {
-        /// AsyncFlow 동작을 위해 viewDidDisappear를 Swizzling합니다.
         static func enableAsyncFlowSwizzling() {
             _ = swizzlingToken
         }
@@ -96,18 +86,14 @@
         }()
 
         @objc func asyncFlow_viewDidDisappear() {
-            // 원본 메서드 호출
             asyncFlow_viewDidDisappear()
 
-            // Window가 없거나 닫히는 중이라고 판단되면 이벤트 전달
-            // macOS는 isBeingDismissed 같은 명확한 프로퍼티가 없으므로
-            // viewDidDisappear 시점에 window가 nil이면 닫힌 것으로 간주합니다.
-            if view.window == nil {
-                Task { @MainActor in
-                    let id = ObjectIdentifier(self)
-                    if let bridge = PresentableBridgeStorage.shared.getBridge(for: id) {
-                        bridge.yield(())
-                    }
+            guard view.window == nil else { return }
+
+            Task { @MainActor in
+                let id = ObjectIdentifier(self)
+                if let bridge = PresentableBridgeStorage.shared.getBridge(for: id) {
+                    bridge.yield(())
                 }
             }
         }
