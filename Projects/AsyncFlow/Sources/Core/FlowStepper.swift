@@ -1,5 +1,5 @@
 //
-//  Stepper.swift
+//  FlowStepper.swift
 //  AsyncFlow
 //
 //  Created by 정준영 on 2025. 12. 29.
@@ -9,15 +9,15 @@ import Foundation
 
 /// Step을 방출하는 주체를 나타내는 프로토콜
 ///
-/// Stepper는 AsyncStream을 통해 Step을 비동기적으로 방출합니다.
-/// 주로 ViewModel이 Stepper 역할을 합니다.
+/// FlowStepper는 AsyncStream을 통해 Step을 비동기적으로 방출합니다.
+/// 주로 ViewModel이 FlowStepper 역할을 합니다.
 ///
 /// ## 사용 예시
 ///
 /// ```swift
 /// @MainActor
-/// final class MovieListViewModel: Stepper {
-///     @StepEmitter var steps
+/// final class MovieListViewModel: FlowStepper {
+///     @Steps var steps
 ///
 ///     var initialStep: Step {
 ///         MovieStep.movieList
@@ -35,10 +35,10 @@ import Foundation
 /// ## 내장 구현체
 ///
 /// - `OneStepper`: 초기 Step 하나만 방출
-/// - `CompositeStepper`: 여러 Stepper를 조합
-/// - `DefaultStepper`: 기본 Stepper (NoneStep 방출)
+/// - `CompositeStepper`: 여러 FlowStepper를 조합
+/// - `DefaultStepper`: 기본 FlowStepper (NoneStep 방출)
 @MainActor
-public protocol Stepper: AnyObject {
+public protocol FlowStepper: AnyObject {
     /// Step을 방출하는 Subject
     ///
     /// AsyncPassthroughSubject를 사용하여 Step을 방출합니다.
@@ -46,20 +46,20 @@ public protocol Stepper: AnyObject {
 
     /// 초기 Step
     ///
-    /// FlowCoordinator가 이 Stepper를 등록할 때 즉시 방출되는 Step입니다.
+    /// FlowCoordinator가 이 FlowStepper를 등록할 때 즉시 방출되는 Step입니다.
     /// 기본값은 NoneStep()입니다.
     var initialStep: Step { get }
 
     /// Step 방출 준비 완료 시 호출
     ///
-    /// FlowCoordinator가 이 Stepper를 구독하기 시작할 때 호출됩니다.
+    /// FlowCoordinator가 이 FlowStepper를 구독하기 시작할 때 호출됩니다.
     /// 초기화 시점에 필요한 로직을 여기에 구현할 수 있습니다.
     func readyToEmitSteps()
 }
 
 // MARK: - Default Implementation
 
-public extension Stepper {
+public extension FlowStepper {
     var initialStep: Step {
         NoneStep()
     }
@@ -75,7 +75,7 @@ public extension Stepper {
 ///
 /// ```swift
 /// @MainActor
-/// final class MovieListViewModel: Stepper {
+/// final class MovieListViewModel: FlowStepper {
 ///     @Steps var steps
 ///
 ///     func handleAction(_ action: Action) {
