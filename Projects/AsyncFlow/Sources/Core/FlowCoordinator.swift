@@ -63,7 +63,8 @@ public final class FlowCoordinator {
     private let didNavigateBridge = AsyncPassthroughSubject<NavigationEvent>()
 
     /// Step을 집계하는 Subject
-    private let stepsSubject = AsyncPassthroughSubject<Step>()
+    /// 외부 딥링크와 initialStep을 위해 버퍼링 지원
+    private let stepsSubject = AsyncReplaySubject<Step>(bufferSize: 1)
 
     /// 고유 식별자
     let identifier = UUID().uuidString
@@ -125,7 +126,7 @@ public final class FlowCoordinator {
             try? await Task.sleep(nanoseconds: 10_000_000) // 0.01초 대기
 
             // initialStep을 stepsSubject에 전송
-            // AsyncPassthroughSubject가 버퍼링을 지원하므로 안전함
+            // AsyncReplaySubject가 버퍼링을 지원하므로 안전함
             let initialStep = stepper.initialStep
             print("📤 Sending initialStep: \(initialStep)")
             if !(initialStep is NoneStep) {

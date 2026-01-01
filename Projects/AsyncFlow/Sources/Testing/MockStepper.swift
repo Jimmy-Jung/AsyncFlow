@@ -37,7 +37,7 @@ import Foundation
 /// ```
 @MainActor
 public final class MockStepper: FlowStepper {
-    public let steps = AsyncPassthroughSubject<Step>()
+    public let steps = AsyncReplaySubject<Step>(bufferSize: 1)
     public private(set) var emittedSteps: [Step] = []
 
     private var _initialStep: Step = NoneStep()

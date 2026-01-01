@@ -27,7 +27,7 @@ import Foundation
 /// - 이후 모든 Stepper의 Step이 병합되어 방출됩니다.
 @MainActor
 public final class CompositeStepper: FlowStepper {
-    public let steps = AsyncPassthroughSubject<Step>()
+    public let steps = AsyncReplaySubject<Step>(bufferSize: 1)
 
     private let innerSteppers: [FlowStepper]
     private var observationTasks: [Task<Void, Never>] = []

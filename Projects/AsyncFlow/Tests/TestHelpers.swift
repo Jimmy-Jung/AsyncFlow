@@ -126,7 +126,7 @@ final class MockPresentable: Presentable {
 
 @MainActor
 final class TestViewModel: FlowStepper {
-    let steps = AsyncPassthroughSubject<Step>()
+    let steps = AsyncReplaySubject<Step>(bufferSize: 1)
 
     private var readyContinuation: AsyncStream<Void>.Continuation?
     private var isReady = false
