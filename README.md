@@ -31,7 +31,7 @@ AsyncFlow는 [RxFlow](https://github.com/RxSwiftCommunity/RxFlow)에서 영감�
 - ✅ **RxSwift 의존성 제거**: Swift Concurrency만 사용
 - ✅ **Type-erased Step**: Generic 제약 없이 유연한 네비게이션
 - ✅ **버퍼링 지원**: 구독 전 Step도 안전하게 처리 (ReplaySubject 패턴)
-- ✅ **Property Wrapper**: `@Steps`로 간결한 Stepper 선언
+- ✅ **Property Wrapper**: `@Steps`로 간결한 FlowStepper 선언
 - ✅ **FlowContributor 패턴**: `.forwardToCurrentFlow`, `.forwardToParentFlow`, `.end` 지원
 - ✅ **[AsyncViewModel](https://github.com/Jimmy-Jung/AsyncViewModel) 통합**: 자연스러운 단방향 데이터 흐름
 - ✅ **선언적이고 테스트 가능**: Swift Testing 프레임워크 지원
@@ -127,13 +127,13 @@ enum MovieStep: Step {
 }
 ```
 
-### 2. Stepper
+### 2. FlowStepper
 
 Step을 방출하는 주체 (주로 ViewModel)
 
 ```swift
 @MainActor
-final class MovieListViewModel: ObservableObject, Stepper {
+final class MovieListViewModel: ObservableObject, FlowStepper {
     @Steps var steps  // Property wrapper로 간단하게 선언
     
     @Published var state = State()
@@ -143,7 +143,7 @@ final class MovieListViewModel: ObservableObject, Stepper {
     }
     
     func readyToEmitSteps() {
-        // FlowCoordinator가 Stepper를 구독할 때 호출됨
+        // FlowCoordinator가 FlowStepper를 구독할 때 호출됨
     }
     
     enum Input: Sendable {
@@ -215,7 +215,7 @@ final class MovieFlow: Flow {
 
 ### 5. FlowContributor
 
-다음 Stepper와 Presentable 연결
+다음 FlowStepper와 Presentable 연결
 
 ```swift
 // 단일 Contributor
@@ -276,13 +276,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 ### 7. OneStepper & CompositeStepper
 
-초기 Step을 방출하는 유틸리티 Stepper
+초기 Step을 방출하는 유틸리티 FlowStepper
 
 ```swift
 // 단일 Step 방출
 let stepper = OneStepper(withSingleStep: MovieStep.movieList)
 
-// 여러 Stepper 조합
+// 여러 FlowStepper 조합
 let stepper1 = OneStepper(withSingleStep: MovieStep.movieList)
 let stepper2 = OneStepper(withSingleStep: MovieStep.watchedList)
 let compositeStepper = CompositeStepper(steppers: [stepper1, stepper2])
@@ -327,7 +327,7 @@ AsyncFlow는 AsyncViewModel과 자연스럽게 통합됩니다.
 
 ```swift
 @AsyncViewModel
-final class LoginViewModel: ObservableObject, Stepper {
+final class LoginViewModel: ObservableObject, FlowStepper {
     @Steps var steps  // Property wrapper로 선언
     
     var initialStep: Step {
@@ -355,7 +355,7 @@ final class LoginViewModel: ObservableObject, Stepper {
 }
 ```
 
-`Stepper` 프로토콜을 채택하면 `@Steps` property wrapper를 사용하여 Step을 방출할 수 있습니다.
+`FlowStepper` 프로토콜을 채택하면 `@Steps` property wrapper를 사용하여 Step을 방출할 수 있습니다.
 
 ---
 
@@ -482,7 +482,7 @@ sequenceDiagram
     Flow->>Flow: navigateToMovieDetail(id: 1)
     Flow->>Flow: Push MovieDetailViewController
     Flow-->>Coordinator: .one(.contribute(withNextPresentable:withNextStepper:))
-    Coordinator->>ViewModel: 새로운 Stepper 구독 (initialStep 처리)
+    Coordinator->>ViewModel: 새로운 FlowStepper 구독 (initialStep 처리)
 ```
 
 ---
@@ -509,7 +509,7 @@ func testMovieFlowNavigation() async {
 }
 ```
 
-### Stepper 테스트
+### FlowStepper 테스트
 
 ```swift
 @Test
