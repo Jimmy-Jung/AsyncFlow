@@ -110,7 +110,7 @@ public final class FlowCoordinator {
     ///   - allowStepWhenDismissed: dismiss되어도 Step 허용 여부 (기본값: false)
     public func coordinate(
         flow: Flow,
-        with stepper: Stepper,
+        with stepper: FlowStepper,
         allowStepWhenDismissed: Bool = false
     ) {
         print("🎯 FlowCoordinator.coordinate called for flow: \(type(of: flow))")
@@ -120,15 +120,20 @@ public final class FlowCoordinator {
         // Step Subject 구독 시작
         startListeningToSteps(for: flow)
 
-        // initialStep을 즉시 stepsSubject에 전송
-        // AsyncPassthroughSubject가 버퍼링을 지원하므로 안전함
-        let initialStep = stepper.initialStep
-        print("📤 Sending initialStep: \(initialStep)")
-        if !(initialStep is NoneStep) {
-            stepsSubject.send(initialStep)
-            print("✅ initialStep sent to stepsSubject")
-        } else {
-            print("⚠️ initialStep is NoneStep, skipping")
+        // Task가 시작될 때까지 잠시 대기 (버퍼링이 제대로 작동하도록)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000) // 0.01초 대기
+
+            // initialStep을 stepsSubject에 전송
+            // AsyncPassthroughSubject가 버퍼링을 지원하므로 안전함
+            let initialStep = stepper.initialStep
+            print("📤 Sending initialStep: \(initialStep)")
+            if !(initialStep is NoneStep) {
+                self.stepsSubject.send(initialStep)
+                print("✅ initialStep sent to stepsSubject")
+            } else {
+                print("⚠️ initialStep is NoneStep, skipping")
+            }
         }
 
         // readyToEmitSteps 호출
@@ -154,19 +159,33 @@ public final class FlowCoordinator {
 
     /// Step Subject 구독
     private func startListeningToSteps(for flow: Flow) {
+        print("👂 startListeningToSteps called")
         let taskId = UUID()
-        let task = Task { [weak self, weak flow] in
-            guard let flow = flow else { return }
-
-            for await step in self?.stepsSubject.stream ?? AsyncStream(unfolding: { nil }) {
-                guard !Task.isCancelled else { break }
-                await self?.handleStep(step, in: flow)
+        let task = Task { @MainActor [weak self, weak flow] in
+            guard let flow = flow else {
+                print("⚠️ flow is nil in startListeningToSteps")
+                return
+            }
+            guard let self = self else {
+                print("⚠️ self is nil in startListeningToSteps")
+                return
             }
 
-            self?.removeTask(taskId)
+            print("👂 Starting to listen to stepsSubject.stream")
+            for await step in self.stepsSubject.stream {
+                guard !Task.isCancelled else {
+                    print("⚠️ Task cancelled")
+                    break
+                }
+                print("📥 Received step from stream: \(step)")
+                await self.handleStep(step, in: flow)
+            }
+
+            self.removeTask(taskId)
         }
 
         activeTasks[taskId] = task
+        print("✅ Task registered for listening to steps")
 
         // Flow dismiss 시 정리
         if !allowStepWhenDismissed {
@@ -185,8 +204,8 @@ public final class FlowCoordinator {
         }
     }
 
-    /// Stepper 이벤트 구독 (initialStep 제외)
-    private func startListeningToStepperEvents(_ stepper: Stepper, for flow: Flow) {
+    /// FlowStepper 이벤트 구독 (initialStep 제외)
+    private func startListeningToStepperEvents(_ stepper: FlowStepper, for flow: Flow) {
         let taskId = UUID()
         let task = Task { [weak self, weak stepper] in
             guard let stepper = stepper else { return }
@@ -223,16 +242,23 @@ public final class FlowCoordinator {
 
     /// Step 처리
     private func handleStep(_ step: Step, in flow: Flow) async {
+        print("🔄 handleStep called with step: \(step)")
         // Step 적응 (필터링)
         let adaptedStep = await flow.adapt(step: step)
-        if adaptedStep is NoneStep { return }
+        print("🔄 adaptedStep: \(adaptedStep)")
+        if adaptedStep is NoneStep {
+            print("⚠️ adaptedStep is NoneStep, returning")
+            return
+        }
 
         // willNavigate 이벤트 발생
         let event = NavigationEvent(flow: flow, step: adaptedStep)
         willNavigateBridge.send(event)
 
         // 네비게이션 수행
+        print("🚀 Calling flow.navigate(to: \(adaptedStep))")
         let contributors = flow.navigate(to: adaptedStep)
+        print("✅ flow.navigate returned: \(contributors)")
 
         // didNavigate 이벤트 발생
         didNavigateBridge.send(event)
@@ -315,10 +341,10 @@ public final class FlowCoordinator {
         }
     }
 
-    /// Presentable/Stepper 이벤트 구독 (initialStep 제외)
+    /// Presentable/FlowStepper 이벤트 구독 (initialStep 제외)
     private func startListeningToPresentableStepperEvents(
         presentable: Presentable,
-        stepper: Stepper,
+        stepper: FlowStepper,
         in _: Flow,
         allowStepWhenNotPresented: Bool,
         allowStepWhenDismissed: Bool
@@ -336,7 +362,7 @@ public final class FlowCoordinator {
                 // allowStepWhenNotPresented 체크
                 if !allowStepWhenNotPresented {
                     // isVisibleStream의 현재 상태 확인은 복잡하므로 일단 항상 허용
-                    // TODO: 필요시 pausable 로직 구현
+                    // FIXME: 필요시 pausable 로직 구현
                 }
 
                 self?.stepsSubject.send(step)
@@ -371,9 +397,9 @@ public final class FlowCoordinator {
         } else {
             Task { @MainActor [weak flow] in
                 // 모든 자식 Flow가 ready될 때까지 대기
-                for childFlow in childFlows {
-                    for await ready in childFlow.flowReady {
-                        if ready { break }
+                for childFlow in childFlows where !Task.isCancelled {
+                    for await ready in childFlow.flowReady where ready {
+                        break
                     }
                 }
                 flow?.flowReadySubject.send(true)

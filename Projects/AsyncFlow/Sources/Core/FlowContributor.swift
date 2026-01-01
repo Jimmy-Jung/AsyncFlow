@@ -27,7 +27,7 @@ public enum FlowContributor {
     ///   - allowStepWhenDismissed: Presentable이 dismiss되어도 Step 허용 (기본값: false)
     case contribute(
         withNextPresentable: Presentable,
-        withNextStepper: Stepper,
+        withNextStepper: FlowStepper,
         allowStepWhenNotPresented: Bool = false,
         allowStepWhenDismissed: Bool = false
     )
@@ -78,7 +78,7 @@ public extension FlowContributor {
     ///
     /// - Parameter withNext: Presentable과 Stepper를 동시에 구현한 객체
     /// - Returns: .contribute FlowContributor
-    static func contribute(withNext nextPresentableAndStepper: Presentable & Stepper) -> FlowContributor {
+    static func contribute(withNext nextPresentableAndStepper: Presentable & FlowStepper) -> FlowContributor {
         .contribute(
             withNextPresentable: nextPresentableAndStepper,
             withNextStepper: nextPresentableAndStepper
