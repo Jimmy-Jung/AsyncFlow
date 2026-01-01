@@ -26,16 +26,16 @@ import Foundation
 /// - 모든 내부 Stepper의 initialStep이 순차적으로 방출됩니다.
 /// - 이후 모든 Stepper의 Step이 병합되어 방출됩니다.
 @MainActor
-public final class CompositeStepper: Stepper {
+public final class CompositeStepper: FlowStepper {
     public let steps = AsyncPassthroughSubject<Step>()
 
-    private let innerSteppers: [Stepper]
+    private let innerSteppers: [FlowStepper]
     private var observationTasks: [Task<Void, Never>] = []
 
     /// CompositeStepper 초기화
     ///
-    /// - Parameter steppers: 조합할 Stepper 배열
-    public init(steppers: [Stepper]) {
+    /// - Parameter steppers: 조합할 FlowStepper 배열
+    public init(steppers: [FlowStepper]) {
         innerSteppers = steppers
     }
 

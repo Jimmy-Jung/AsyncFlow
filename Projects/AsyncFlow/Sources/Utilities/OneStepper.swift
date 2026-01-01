@@ -42,7 +42,7 @@ import Foundation
 /// }
 /// ```
 @MainActor
-public final class OneStepper: Stepper {
+public final class OneStepper: FlowStepper {
     public let steps = AsyncPassthroughSubject<Step>()
 
     private let singleStep: Step
@@ -65,7 +65,7 @@ public final class OneStepper: Stepper {
 /// NoneStep을 초기 Step으로 방출합니다.
 /// Flow를 시작할 때 특별한 초기 Step이 필요 없을 때 사용합니다.
 @MainActor
-public final class DefaultStepper: Stepper {
+public final class DefaultStepper: FlowStepper {
     public let steps = AsyncPassthroughSubject<Step>()
 
     public var initialStep: Step {
