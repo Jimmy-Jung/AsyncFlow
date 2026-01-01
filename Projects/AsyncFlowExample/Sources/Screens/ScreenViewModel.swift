@@ -42,7 +42,7 @@ final class ScreenViewModel: ObservableObject, FlowStepper {
     // MARK: - Properties
 
     @Published var state: State
-    @Steps var steps: AsyncPassthroughSubject<Step>
+    @Steps var steps
 
     var initialStep: Step {
         NoneStep()
