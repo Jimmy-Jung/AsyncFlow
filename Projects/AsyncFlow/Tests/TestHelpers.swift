@@ -125,7 +125,7 @@ final class MockPresentable: Presentable {
 // MARK: - Test ViewModel
 
 @MainActor
-final class TestViewModel: Stepper {
+final class TestViewModel: FlowStepper {
     let steps = AsyncPassthroughSubject<Step>()
 
     private var readyContinuation: AsyncStream<Void>.Continuation?

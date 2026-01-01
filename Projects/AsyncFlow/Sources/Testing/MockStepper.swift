@@ -36,7 +36,7 @@ import Foundation
 /// }
 /// ```
 @MainActor
-public final class MockStepper: Stepper {
+public final class MockStepper: FlowStepper {
     public let steps = AsyncPassthroughSubject<Step>()
     public private(set) var emittedSteps: [Step] = []
 
