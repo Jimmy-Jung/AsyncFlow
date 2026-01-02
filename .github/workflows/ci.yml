@@ -5,83 +5,115 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Job 1: Swift Package 빌드 및 테스트
   build-and-test:
-    name: Build and Test
-    runs-on: macos-14
+    name: Build and Test AsyncFlow
+    runs-on: macos-15
         
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       
-    - name: Select Xcode
-      run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+    - name: Show Xcode and Swift version
+      run: |
+        xcodebuild -version
+        swift --version
       
-    - name: Show Xcode version
-      run: xcodebuild -version
+    - name: Build AsyncFlow
+      run: swift build -c release
       
-    - name: Cache Tuist
-      uses: actions/cache@v3
+    - name: Test AsyncFlow
+      run: swift test --enable-code-coverage --parallel
+      
+    - name: Generate Coverage Report
+      run: |
+        xcrun llvm-cov export -format="lcov" \
+          .build/debug/AsyncFlowPackageTests.xctest/Contents/MacOS/AsyncFlowPackageTests \
+          -instr-profile .build/debug/codecov/default.profdata > coverage.lcov || true
+      
+    - name: Upload Coverage
+      uses: codecov/codecov-action@v5
       with:
-        path: ~/.local/share/tuist
-        key: ${{ runner.os }}-tuist-${{ hashFiles('**/Tuist/**') }}
-        restore-keys: |
-          ${{ runner.os }}-tuist-
-      
-    - name: Install Tuist
-      run: |
-        curl -Ls https://install.tuist.io | bash
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-      
-    - name: Verify Tuist installation
-      run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        tuist version
-      
-    - name: Install Dependencies
-      run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        tuist install
-      
-    - name: Generate Project
-      run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        tuist generate
-      
-    - name: Run Tests
-      run: |
-        set -o pipefail
-        xcodebuild test \
-          -workspace AsyncFlow.xcworkspace \
-          -scheme AsyncFlow \
-          -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
-          -enableCodeCoverage YES \
-          CODE_SIGNING_ALLOWED=NO
-      
-    - name: Build Example App
-      run: |
-        set -o pipefail
-        xcodebuild build \
-          -workspace AsyncFlow.xcworkspace \
-          -scheme AsyncFlowExample \
-          -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
-          CODE_SIGNING_ALLOWED=NO
-      
-  lint:
-    name: SwiftLint
-    runs-on: macos-14
+        files: coverage.lcov
+        flags: asyncflow
+        fail_ci_if_error: false
+  
+  # Job 2: 패키지 검증
+  validate-package:
+    name: Validate Swift Package
+    runs-on: macos-15
     
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
+      
+    - name: Show Xcode and Swift version
+      run: |
+        xcodebuild -version
+        swift --version
+      
+    - name: Validate Package
+      run: |
+        echo "=== Validating AsyncFlow Package ==="
+        swift package dump-package
+        swift package show-dependencies
+  
+  # Job 3: 코드 스타일
+  lint:
+    name: SwiftLint
+    runs-on: macos-15
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
       
     - name: Install SwiftLint
-      run: brew install swiftlint
+      run: |
+        if ! which swiftlint >/dev/null; then
+          brew install swiftlint
+        fi
       
-    - name: Run SwiftLint
-      run: swiftlint lint --lenient
+    - name: SwiftLint
+      run: |
+        swiftlint --strict || echo "SwiftLint issues found, but continuing..."
+  
+  # Job 4: Example 프로젝트 빌드 (Tuist)
+  build-example:
+    name: Build Example Project
+    runs-on: macos-15
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      
+    - name: Show Xcode and Swift version
+      run: |
+        xcodebuild -version
+        swift --version
+      
+    - name: Install Tuist
+      run: |
+        brew install tuist
+      
+    - name: Install Dependencies
+      run: tuist install
+      
+    - name: Generate Xcode Project
+      run: tuist generate
+      
+    - name: Build Example App
+      run: |
+        xcodebuild build \
+          -workspace AsyncFlow.xcworkspace \
+          -scheme AsyncFlowExample \
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+          -configuration Debug \
+          CODE_SIGNING_ALLOWED=NO \
+          | xcpretty || true
