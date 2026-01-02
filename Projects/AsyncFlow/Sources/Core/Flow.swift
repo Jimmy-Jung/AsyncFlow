@@ -116,12 +116,13 @@ extension Flow {
     /// Flow가 준비되었을 때 true를 방출하는 Subject
     ///
     /// 자식 Flow들이 모두 준비되면 true를 방출합니다.
-    var flowReadySubject: AsyncPassthroughSubject<Bool> {
-        if let subject = objc_getAssociatedObject(self, &flowReadySubjectKey) as? AsyncPassthroughSubject<Bool> {
+    /// AsyncReplaySubject를 사용하여 구독 전 값도 받을 수 있습니다.
+    var flowReadySubject: AsyncReplaySubject<Bool> {
+        if let subject = objc_getAssociatedObject(self, &flowReadySubjectKey) as? AsyncReplaySubject<Bool> {
             return subject
         }
 
-        let newSubject = AsyncPassthroughSubject<Bool>()
+        let newSubject = AsyncReplaySubject<Bool>(bufferSize: 1)
         objc_setAssociatedObject(self, &flowReadySubjectKey, newSubject, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         return newSubject
     }
