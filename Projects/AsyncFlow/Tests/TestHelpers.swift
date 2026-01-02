@@ -53,7 +53,7 @@ extension Test {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
     }
-    
+
     @MainActor
     static func wait(milliseconds: Int) async {
         try? await Task.sleep(nanoseconds: UInt64(milliseconds) * 1_000_000)
@@ -67,30 +67,30 @@ struct CoordinationTestHelper {
     let coordinator: FlowCoordinator
     let flow: MockFlow
     let stepper: MockStepper
-    
+
     init(initialStep: TestStep? = nil) {
         coordinator = FlowCoordinator()
         flow = MockFlow()
         stepper = MockStepper()
-        
+
         if let initialStep = initialStep {
             stepper.setInitialStep(initialStep)
         }
     }
-    
+
     func start() async {
         var subscribed = false
         stepper.onObservationStart = { subscribed = true }
-        
+
         coordinator.coordinate(flow: flow, with: stepper)
-        
+
         await Test.waitUntil { subscribed }
     }
-    
+
     func waitForNavigation(count: Int) async {
         await Test.waitUntil { flow.navigateCallCount >= count }
     }
-    
+
     func emitAndWait(_ step: TestStep, expectedCount: Int) async {
         stepper.emit(step)
         await waitForNavigation(count: expectedCount)
