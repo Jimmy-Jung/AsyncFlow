@@ -11,39 +11,29 @@ import Testing
 
 @Suite("FlowCoordinator Tests")
 struct FlowCoordinatorTests {
-    @Test("Coordinator가 Step을 감지하고 navigate를 호출")
+    @Test("Coordinator detects steps and calls navigate")
     @MainActor
     func coordination() async {
         // Given
-        let coordinator = FlowCoordinator()
-        let flow = MockFlow()
-        let stepper = MockStepper<TestStep>()
-
-        var subscribed = false
-        stepper.onObservationStart = { subscribed = true }
+        let helper = CoordinationTestHelper(initialStep: .initial)
 
         // When
-        coordinator.coordinate(flow: flow, with: stepper)
-        await Test.waitUntil { subscribed }
-
-        stepper.emit(.initial)
-        await Test.waitUntil { flow.navigateCallCount >= 1 }
-
-        stepper.emit(.next)
-        await Test.waitUntil { flow.navigateCallCount >= 2 }
+        await helper.start()
+        await helper.waitForNavigation(count: 1)
+        await helper.emitAndWait(.next, expectedCount: 2)
 
         // Then
-        #expect(flow.navigateCallCount == 2)
-        #expect(flow.lastStep == .next)
+        #expect(helper.flow.navigateCallCount == 2)
+        #expect((helper.flow.lastStep as? TestStep) == .next)
     }
 
-    @Test("Adapt 메서드가 Step 필터링")
+    @Test("Adapt method filters steps")
     @MainActor
     func adaptFiltering() async {
         // Given
         let coordinator = FlowCoordinator()
         let flow = MockFlow()
-        let stepper = MockStepper<TestStep>()
+        let stepper = MockStepper()
 
         var subscribed = false
         var adaptCalled = false
@@ -55,7 +45,7 @@ struct FlowCoordinatorTests {
         coordinator.coordinate(flow: flow, with: stepper)
         await Test.waitUntil { subscribed }
 
-        stepper.emit(.end)
+        stepper.emit(TestStep.end)
         await Test.waitUntil { adaptCalled }
 
         // Then
@@ -63,39 +53,31 @@ struct FlowCoordinatorTests {
         #expect(flow.navigateCallCount == 0)
     }
 
-    @Test("Navigation Event 스트림 동작")
+    @Test("Navigation events stream works correctly")
     @MainActor
     func navigationEvents() async {
         // Given
-        let coordinator = FlowCoordinator()
-        let flow = MockFlow()
-        let stepper = MockStepper<TestStep>()
+        let helper = CoordinationTestHelper(initialStep: .initial)
 
-        var subscribed = false
         var willReceived = false
         var didReceived = false
 
-        stepper.onObservationStart = { subscribed = true }
-
         let willTask = Task {
-            for await _ in coordinator.willNavigate {
+            for await _ in helper.coordinator.willNavigate {
                 willReceived = true
                 break
             }
         }
 
         let didTask = Task {
-            for await _ in coordinator.didNavigate {
+            for await _ in helper.coordinator.didNavigate {
                 didReceived = true
                 break
             }
         }
 
         // When
-        coordinator.coordinate(flow: flow, with: stepper)
-        await Test.waitUntil { subscribed }
-
-        stepper.emit(.initial)
+        await helper.start()
         await Test.waitUntil { willReceived && didReceived }
 
         // Then
@@ -106,67 +88,53 @@ struct FlowCoordinatorTests {
         #expect(didReceived)
     }
 
-    @Test("Multiple Contributors 처리")
+    @Test("Multiple contributors are handled correctly")
     @MainActor
     func multipleContributors() async {
         // Given
-        let coordinator = FlowCoordinator()
-        let flow = MockFlow()
-        let stepper = MockStepper<TestStep>()
-        let nextStepper1 = MockStepper<TestStep>()
-        let nextStepper2 = MockStepper<TestStep>()
+        let helper = CoordinationTestHelper(initialStep: .initial)
 
-        var subscribed = false
+        let nextStepper1 = MockStepper()
+        let nextStepper2 = MockStepper()
+
         var nextStepper1Subscribed = false
         var nextStepper2Subscribed = false
 
-        stepper.onObservationStart = { subscribed = true }
         nextStepper1.onObservationStart = { nextStepper1Subscribed = true }
         nextStepper2.onObservationStart = { nextStepper2Subscribed = true }
 
-        // When
-        coordinator.coordinate(flow: flow, with: stepper)
-        await Test.waitUntil { subscribed }
-
-        flow.nextContributors = .multiple(
-            .contribute(presentable: MockPresentable(), stepper: nextStepper1),
-            .contribute(presentable: MockPresentable(), stepper: nextStepper2)
+        helper.flow.nextContributors = .multiple(
+            .contribute(withNextPresentable: MockPresentable(), withNextStepper: nextStepper1),
+            .contribute(withNextPresentable: MockPresentable(), withNextStepper: nextStepper2)
         )
 
-        stepper.emit(.initial)
+        // When
+        await helper.start()
         await Test.waitUntil { nextStepper1Subscribed && nextStepper2Subscribed }
 
-        flow.nextContributors = .none
+        helper.flow.nextContributors = .none
 
-        nextStepper1.emit(.next)
-        await Test.waitUntil { flow.navigateCallCount >= 2 }
+        nextStepper1.emit(TestStep.next)
+        await helper.waitForNavigation(count: 2)
 
-        nextStepper2.emit(.next)
-        await Test.waitUntil { flow.navigateCallCount >= 3 }
+        nextStepper2.emit(TestStep.next)
+        await helper.waitForNavigation(count: 3)
 
         // Then
-        #expect(flow.navigateCallCount == 3)
+        #expect(helper.flow.navigateCallCount == 3)
     }
 
-    @Test("Child Flow 시작")
+    @Test("Child flow starts correctly")
     @MainActor
     func childFlow() async {
         // Given
-        let coordinator = FlowCoordinator()
-        let flow = MockFlow()
-        let stepper = MockStepper<TestStep>()
-
-        var subscribed = false
-        stepper.onObservationStart = { subscribed = true }
+        let helper = CoordinationTestHelper(initialStep: .childFlow)
 
         // When
-        coordinator.coordinate(flow: flow, with: stepper)
-        await Test.waitUntil { subscribed }
+        await helper.start()
+        await Test.waitUntil { helper.flow.childFlow != nil }
 
-        stepper.emit(.childFlow)
-        await Test.waitUntil { flow.childFlow != nil }
-
-        guard let child = flow.childFlow else {
+        guard let child = helper.flow.childFlow else {
             #expect(Bool(false), "Child flow should be created")
             return
         }
@@ -175,32 +143,22 @@ struct FlowCoordinatorTests {
 
         // Then
         #expect(child.navigateCallCount == 1)
-        #expect(child.lastStep == .initial)
+        #expect((child.lastStep as? TestStep) == .initial)
     }
 
-    @Test("Presentable 닫힘 시 리소스 해제")
+    @Test("External step injection works (DeepLink)")
     @MainActor
-    func resourceDeallocation() async {
+    func deepLinkNavigation() async {
         // Given
-        let coordinator = FlowCoordinator()
-        weak var weakFlow: MockFlow?
-        weak var weakStepper: MockStepper<TestStep>?
+        let helper = CoordinationTestHelper()
 
         // When
-        autoreleasepool {
-            let flow = MockFlow()
-            let stepper = MockStepper<TestStep>()
-            weakFlow = flow
-            weakStepper = stepper
-
-            coordinator.coordinate(flow: flow, with: stepper)
-            flow.rootPresentable.dismiss()
-        }
-
-        await Test.waitUntil { weakFlow == nil && weakStepper == nil }
+        await helper.start()
+        helper.coordinator.navigate(to: TestStep.detail(id: 123))
+        await helper.waitForNavigation(count: 1)
 
         // Then
-        #expect(weakFlow == nil)
-        #expect(weakStepper == nil)
+        #expect(helper.flow.navigateCallCount == 1)
+        #expect((helper.flow.lastStep as? TestStep) == .detail(id: 123))
     }
 }

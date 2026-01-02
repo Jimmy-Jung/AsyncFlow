@@ -16,37 +16,61 @@ import Foundation
 /// ```swift
 /// // AppDelegate에서
 /// let appFlow = AppFlow(window: window)
-/// let appStepper = OneStepper(AppStep.launch)
+/// let appStepper = OneStepper(withSingleStep: AppStep.launch)
 /// coordinator.coordinate(flow: appFlow, with: appStepper)
 /// ```
 ///
 /// ```swift
 /// // 자식 Flow 시작 시
-/// func navigateToSettings() -> FlowContributors {
-///     let settingsFlow = SettingsFlow()
-///     let settingsStepper = OneStepper(SettingsStep.settings)
+/// func navigate(to step: Step) -> FlowContributors {
+///     guard let step = step as? AppStep else { return .none }
 ///
-///     return .one(.contribute(presentable: settingsFlow, stepper: settingsStepper))
+///     switch step {
+///     case .settings:
+///         let settingsFlow = SettingsFlow()
+///         let settingsStepper = OneStepper(withSingleStep: SettingsStep.main)
+///
+///         Flows.use(settingsFlow, when: .ready) { [weak self] root in
+///             self?.navigationController.present(root, animated: true)
+///         }
+///
+///         return .one(flowContributor: .contribute(
+///             withNextPresentable: settingsFlow,
+///             withNextStepper: settingsStepper
+///         ))
+///     }
 /// }
 /// ```
 @MainActor
-public final class OneStepper<S: Step>: Stepper {
-    public typealias StepType = S
+public final class OneStepper: FlowStepper {
+    public let steps = AsyncReplaySubject<Step>(bufferSize: 1)
 
-    @StepEmitter public var stepEmitter: StepEmitter<S>
+    private let singleStep: Step
 
-    private let initialStep: S
-
-    public var steps: AsyncStream<S> {
-        AsyncStream { continuation in
-            continuation.yield(initialStep)
-        }
+    /// 초기 Step을 반환
+    public var initialStep: Step {
+        singleStep
     }
 
     /// OneStepper 초기화
     ///
-    /// - Parameter step: 방출할 초기 Step
-    public init(_ step: S) {
-        initialStep = step
+    /// - Parameter singleStep: 방출할 초기 Step
+    public init(withSingleStep singleStep: Step) {
+        self.singleStep = singleStep
     }
+}
+
+/// 기본 Stepper
+///
+/// NoneStep을 초기 Step으로 방출합니다.
+/// Flow를 시작할 때 특별한 초기 Step이 필요 없을 때 사용합니다.
+@MainActor
+public final class DefaultStepper: FlowStepper {
+    public let steps = AsyncReplaySubject<Step>(bufferSize: 1)
+
+    public var initialStep: Step {
+        NoneStep()
+    }
+
+    public init() {}
 }

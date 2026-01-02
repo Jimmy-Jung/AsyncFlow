@@ -9,15 +9,15 @@
 import Foundation
 import Testing
 
-@Suite("AsyncStreamBridge Tests")
-struct AsyncStreamBridgeTests {
+@Suite("AsyncPassthroughSubject Tests")
+struct AsyncPassthroughSubjectTests {
     // MARK: - Basic Functionality Tests
 
     @Test("단일 구독자가 값을 정상적으로 수신하는지 확인")
     @MainActor
     func singleSubscriber() async {
-        let bridge = AsyncStreamBridge<Int>()
-        let stream = bridge.stream
+        let subject = AsyncPassthroughSubject<Int>()
+        let stream = subject.stream
 
         let task = Task {
             var receivedValues: [Int] = []
@@ -27,10 +27,10 @@ struct AsyncStreamBridgeTests {
             return receivedValues
         }
 
-        bridge.yield(1)
-        bridge.yield(2)
-        bridge.yield(3)
-        bridge.finish()
+        subject.send(1)
+        subject.send(2)
+        subject.send(3)
+        subject.finish()
 
         let receivedValues = await task.value
 
@@ -40,8 +40,8 @@ struct AsyncStreamBridgeTests {
     @Test("빈 스트림을 finish 하면 빈 배열을 반환")
     @MainActor
     func emptyStream() async {
-        let bridge = AsyncStreamBridge<Int>()
-        let stream = bridge.stream
+        let subject = AsyncPassthroughSubject<Int>()
+        let stream = subject.stream
 
         let task = Task {
             var values: [Int] = []
@@ -51,21 +51,21 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.finish()
+        subject.finish()
 
         let result = await task.value
         #expect(result.isEmpty)
     }
 
-    @Test("구독 전에 yield한 값은 받지 못함")
+    @Test("구독 전에 send한 값은 받지 못함")
     @MainActor
-    func yieldBeforeSubscription() async {
-        let bridge = AsyncStreamBridge<Int>()
+    func sendBeforeSubscription() async {
+        let subject = AsyncPassthroughSubject<Int>()
 
-        bridge.yield(1)
-        bridge.yield(2)
+        subject.send(1)
+        subject.send(2)
 
-        let stream = bridge.stream
+        let stream = subject.stream
 
         let task = Task {
             var values: [Int] = []
@@ -76,7 +76,7 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield(3)
+        subject.send(3)
 
         let result = await task.value
         #expect(result == [3])
@@ -87,10 +87,10 @@ struct AsyncStreamBridgeTests {
     @Test("다중 구독자(Multicast)가 값을 모두 수신하는지 확인")
     @MainActor
     func multipleSubscribers() async {
-        let bridge = AsyncStreamBridge<String>()
+        let subject = AsyncPassthroughSubject<String>()
 
-        let stream1 = bridge.stream
-        let stream2 = bridge.stream
+        let stream1 = subject.stream
+        let stream2 = subject.stream
 
         let task1 = Task<[String], Never> {
             var values: [String] = []
@@ -108,9 +108,9 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield("A")
-        bridge.yield("B")
-        bridge.finish()
+        subject.send("A")
+        subject.send("B")
+        subject.finish()
 
         let result1 = await task1.value
         let result2 = await task2.value
@@ -122,11 +122,11 @@ struct AsyncStreamBridgeTests {
     @Test("여러 구독자가 독립적으로 동작하는지 확인")
     @MainActor
     func independentSubscribers() async {
-        let bridge = AsyncStreamBridge<Int>()
+        let subject = AsyncPassthroughSubject<Int>()
 
-        let stream1 = bridge.stream
-        let stream2 = bridge.stream
-        let stream3 = bridge.stream
+        let stream1 = subject.stream
+        let stream2 = subject.stream
+        let stream3 = subject.stream
 
         let task1 = Task {
             var values: [Int] = []
@@ -154,10 +154,10 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield(1)
-        bridge.yield(2)
-        bridge.yield(3)
-        bridge.finish()
+        subject.send(1)
+        subject.send(2)
+        subject.send(3)
+        subject.finish()
 
         let (result1, result2, result3) = await (task1.value, task2.value, task3.value)
 
@@ -171,9 +171,9 @@ struct AsyncStreamBridgeTests {
     @Test("구독 취소 시 다른 구독자에게 영향이 없는지 확인")
     @MainActor
     func subscriptionCancellation() async {
-        let bridge = AsyncStreamBridge<Int>()
-        let stream1 = bridge.stream
-        let stream2 = bridge.stream
+        let subject = AsyncPassthroughSubject<Int>()
+        let stream1 = subject.stream
+        let stream2 = subject.stream
 
         let task1 = Task<[Int], Never> {
             var values: [Int] = []
@@ -192,9 +192,9 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield(1)
-        bridge.yield(2)
-        bridge.finish()
+        subject.send(1)
+        subject.send(2)
+        subject.finish()
 
         let result1 = await task1.value
         let result2 = await task2.value
@@ -206,10 +206,10 @@ struct AsyncStreamBridgeTests {
     @Test("중간에 구독 취소 후 새로운 구독이 정상 동작하는지 확인")
     @MainActor
     func cancelAndResubscribe() async {
-        let bridge = AsyncStreamBridge<Int>()
+        let subject = AsyncPassthroughSubject<Int>()
 
         // 첫 번째 구독
-        let stream1 = bridge.stream
+        let stream1 = subject.stream
         let task1 = Task {
             var values: [Int] = []
             for await value in stream1 {
@@ -218,14 +218,14 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield(1)
+        subject.send(1)
         try? await Task.sleep(nanoseconds: 10_000_000)
 
         task1.cancel()
         try? await Task.sleep(nanoseconds: 10_000_000)
 
         // 두 번째 구독
-        let stream2 = bridge.stream
+        let stream2 = subject.stream
         let task2 = Task {
             var values: [Int] = []
             for await value in stream2 {
@@ -235,8 +235,8 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield(2)
-        bridge.yield(3)
+        subject.send(2)
+        subject.send(3)
 
         let result2 = await task2.value
         #expect(result2 == [2, 3])
@@ -247,12 +247,12 @@ struct AsyncStreamBridgeTests {
     @Test("finish 호출 후 새로운 구독자는 즉시 종료됨")
     @MainActor
     func finishBeforeNewSubscription() async {
-        let bridge = AsyncStreamBridge<Int>()
+        let subject = AsyncPassthroughSubject<Int>()
 
-        bridge.yield(1)
-        bridge.finish()
+        subject.send(1)
+        subject.finish()
 
-        let stream = bridge.stream
+        let stream = subject.stream
         let task = Task {
             var values: [Int] = []
             for await value in stream {
@@ -268,10 +268,10 @@ struct AsyncStreamBridgeTests {
     @Test("finish는 모든 구독자를 종료시킴")
     @MainActor
     func finishAllSubscribers() async {
-        let bridge = AsyncStreamBridge<String>()
+        let subject = AsyncPassthroughSubject<String>()
 
-        let stream1 = bridge.stream
-        let stream2 = bridge.stream
+        let stream1 = subject.stream
+        let stream2 = subject.stream
 
         let task1 = Task {
             var values: [String] = []
@@ -289,9 +289,9 @@ struct AsyncStreamBridgeTests {
             return values
         }
 
-        bridge.yield("A")
-        bridge.yield("B")
-        bridge.finish()
+        subject.send("A")
+        subject.send("B")
+        subject.finish()
 
         let (result1, result2) = await (task1.value, task2.value)
 
@@ -303,9 +303,9 @@ struct AsyncStreamBridgeTests {
 
     @Test("대량의 값을 빠르게 방출해도 정상 동작하는지 확인")
     @MainActor
-    func highVolumeYield() async {
-        let bridge = AsyncStreamBridge<Int>()
-        let stream = bridge.stream
+    func highVolumeSend() async {
+        let subject = AsyncPassthroughSubject<Int>()
+        let stream = subject.stream
 
         let task = Task {
             var values: [Int] = []
@@ -317,9 +317,9 @@ struct AsyncStreamBridgeTests {
 
         let count = 1000
         for i in 0 ..< count {
-            bridge.yield(i)
+            subject.send(i)
         }
-        bridge.finish()
+        subject.finish()
 
         let result = await task.value
         #expect(result.count == count)
@@ -329,9 +329,9 @@ struct AsyncStreamBridgeTests {
     @Test("여러 구독자가 대량의 값을 동시에 받을 수 있는지 확인")
     @MainActor
     func multicastHighVolume() async {
-        let bridge = AsyncStreamBridge<Int>()
+        let subject = AsyncPassthroughSubject<Int>()
 
-        let streams = (0 ..< 5).map { _ in bridge.stream }
+        let streams = (0 ..< 5).map { _ in subject.stream }
 
         let tasks = streams.map { stream in
             Task {
@@ -345,9 +345,9 @@ struct AsyncStreamBridgeTests {
 
         let count = 100
         for i in 0 ..< count {
-            bridge.yield(i)
+            subject.send(i)
         }
-        bridge.finish()
+        subject.finish()
 
         let results = await withTaskGroup(of: [Int].self) { group in
             for task in tasks {

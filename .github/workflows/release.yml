@@ -5,81 +5,74 @@ on:
     tags:
       - '*.*.*'
 
-permissions:
-  contents: write
-
 jobs:
-  create-release:
+  release:
     name: Create Release
-    runs-on: macos-15
+    runs-on: macos-14
     
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+    - name: Checkout
+      uses: actions/checkout@v4
       
-      - name: Show Xcode and Swift version
-        run: |
-          xcodebuild -version
-          swift --version
+    - name: Get version from tag
+      id: tag_name
+      run: |
+        echo "current_version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        
+    - name: Extract changelog
+      id: changelog
+      run: |
+        version=${{ steps.tag_name.outputs.current_version }}
+        changelog=$(sed -n "/## \[$version\]/,/## \[/p" CHANGELOG.md | sed '$d')
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        echo "$changelog" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        body: ${{ steps.changelog.outputs.changelog }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+  documentation:
+    name: Deploy Documentation
+    runs-on: macos-14
+    needs: release
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
       
-      - name: Build AsyncFlow
-        run: swift build -c release
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
       
-      - name: Test AsyncFlow
-        run: swift test --parallel
+    - name: Install Tuist
+      run: curl -Ls https://install.tuist.io | bash
       
-      - name: Validate Package
-        run: |
-          swift package dump-package
-          swift package show-dependencies
+    - name: Install Dependencies
+      run: tuist install
       
-      - name: Extract Version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    - name: Generate Project
+      run: tuist generate
       
-      - name: Generate Changelog
-        id: changelog
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
-          echo "## What's Changed in $VERSION" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"- %s (%h)" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: AsyncFlow ${{ steps.version.outputs.VERSION }}
-          body: |
-            # AsyncFlow ${{ steps.version.outputs.VERSION }}
-            
-            ${{ steps.changelog.outputs.CHANGELOG }}
-            
-            ## Installation
-            
-            ### Swift Package Manager
-            
-            ```swift
-            dependencies: [
-                .package(url: "https://github.com/Jimmy-Jung/AsyncFlow", from: "${{ steps.version.outputs.VERSION }}")
-            ]
-            ```
-            
-            ### Products
-            
-            ```swift
-            .target(
-                name: "YourTarget",
-                dependencies: [
-                    .product(name: "AsyncFlow", package: "AsyncFlow")
-                ]
-            )
-            ```
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+    - name: Build Documentation
+      run: |
+        xcodebuild docbuild \
+          -scheme AsyncFlow \
+          -destination 'generic/platform=iOS' \
+          -derivedDataPath DerivedData
+          
+        $(xcrun --find docc) process-archive \
+          transform-for-static-hosting \
+          DerivedData/Build/Products/Debug-iphoneos/AsyncFlow.doccarchive \
+          --output-path docs \
+          --hosting-base-path AsyncFlow
+          
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs

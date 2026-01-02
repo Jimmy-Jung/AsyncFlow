@@ -16,54 +16,62 @@ import Foundation
 /// ```swift
 /// @Test
 /// func testStepEmission() async {
-///     let mockStepper = MockStepper<MovieStep>()
-///     var receivedSteps: [MovieStep] = []
+///     let mockStepper = MockStepper()
+///     mockStepper.setInitialStep(MovieStep.movieList)
+///
+///     var receivedSteps: [Step] = []
 ///
 ///     Task {
-///         for await step in mockStepper.steps {
+///         for await step in mockStepper.steps.stream {
 ///             receivedSteps.append(step)
 ///         }
 ///     }
 ///
 ///     // Step 방출
-///     mockStepper.emit(.movieList)
-///     mockStepper.emit(.movieDetail(id: 1))
+///     mockStepper.emit(MovieStep.movieDetail(id: 1))
 ///
 ///     try await Task.sleep(for: .milliseconds(100))
 ///
-///     #expect(receivedSteps == [.movieList, .movieDetail(id: 1)])
+///     #expect(receivedSteps.count == 1)
 /// }
 /// ```
 @MainActor
-public final class MockStepper<S: Step>: Stepper {
-    public typealias StepType = S
+public final class MockStepper: FlowStepper {
+    public let steps = AsyncReplaySubject<Step>(bufferSize: 1)
+    public private(set) var emittedSteps: [Step] = []
 
-    @StepEmitter public var stepEmitter: StepEmitter<S>
-    public private(set) var emittedSteps: [S] = []
+    private var _initialStep: Step = NoneStep()
 
     public var onObservationStart: (() -> Void)?
     private var hasNotifiedObservation = false
 
     public init() {}
 
-    public var steps: AsyncStream<S> {
+    public var initialStep: Step {
+        _initialStep
+    }
+
+    public func setInitialStep(_ step: Step) {
+        _initialStep = step
+    }
+
+    public func readyToEmitSteps() {
         if !hasNotifiedObservation {
             hasNotifiedObservation = true
             onObservationStart?()
         }
-        return stepEmitter.stream
     }
 
-    public func emit(_ step: S) {
+    public func emit(_ step: Step) {
         emittedSteps.append(step)
-        stepEmitter.emit(step)
+        steps.send(step)
     }
 
-    public func emit(_ steps: [S]) {
+    public func emit(_ steps: [Step]) {
         steps.forEach(emit)
     }
 
-    public func emit(_ step: S, waitFor duration: TimeInterval) async {
+    public func emit(_ step: Step, waitFor duration: TimeInterval) async {
         emit(step)
         try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
     }
@@ -71,5 +79,6 @@ public final class MockStepper<S: Step>: Stepper {
     public func reset() {
         emittedSteps.removeAll()
         hasNotifiedObservation = false
+        _initialStep = NoneStep()
     }
 }

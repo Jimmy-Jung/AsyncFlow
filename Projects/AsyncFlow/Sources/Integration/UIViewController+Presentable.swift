@@ -11,27 +11,39 @@
     // MARK: - UIViewController + Presentable
 
     extension UIViewController: Presentable {
-        public var viewController: PlatformViewController { self }
-
-        public var isPresented: Bool {
-            view.window != nil && !isBeingDismissed
+        /// Presentable이 표시될 때 true를 방출하는 스트림
+        public var isVisibleStream: AsyncStream<Bool> {
+            visibilityBridge.stream
         }
 
+        /// Presentable이 dismiss될 때 알림을 받는 스트림
         public var onDismissed: AsyncStream<Void> {
             dismissBridge.stream
         }
 
         // MARK: - Internal
 
-        var dismissBridge: AsyncStreamBridge<Void> {
+        var visibilityBridge: AsyncPassthroughSubject<Bool> {
             let id = ObjectIdentifier(self)
 
-            if let bridge = PresentableBridgeStorage.shared.getBridge(for: id) {
+            if let bridge = PresentableBridgeStorage.shared.getVisibilityBridge(for: id) {
                 return bridge
             }
 
-            let bridge = AsyncStreamBridge<Void>()
-            PresentableBridgeStorage.shared.setBridge(bridge, for: id, owner: self)
+            let bridge = AsyncPassthroughSubject<Bool>()
+            PresentableBridgeStorage.shared.setVisibilityBridge(bridge, for: id, owner: self)
+            return bridge
+        }
+
+        var dismissBridge: AsyncPassthroughSubject<Void> {
+            let id = ObjectIdentifier(self)
+
+            if let bridge = PresentableBridgeStorage.shared.getDismissBridge(for: id) {
+                return bridge
+            }
+
+            let bridge = AsyncPassthroughSubject<Void>()
+            PresentableBridgeStorage.shared.setDismissBridge(bridge, for: id, owner: self)
             return bridge
         }
     }
@@ -44,20 +56,40 @@
 
         private struct WeakBox {
             weak var owner: AnyObject?
-            let bridge: AsyncStreamBridge<Void>
+            let visibilityBridge: AsyncPassthroughSubject<Bool>?
+            let dismissBridge: AsyncPassthroughSubject<Void>?
         }
 
         private var storage: [ObjectIdentifier: WeakBox] = [:]
 
         private init() {}
 
-        func getBridge(for id: ObjectIdentifier) -> AsyncStreamBridge<Void>? {
+        func getVisibilityBridge(for id: ObjectIdentifier) -> AsyncPassthroughSubject<Bool>? {
             cleanupDeallocatedObjects()
-            return storage[id]?.bridge
+            return storage[id]?.visibilityBridge
         }
 
-        func setBridge(_ bridge: AsyncStreamBridge<Void>, for id: ObjectIdentifier, owner: AnyObject) {
-            storage[id] = WeakBox(owner: owner, bridge: bridge)
+        func getDismissBridge(for id: ObjectIdentifier) -> AsyncPassthroughSubject<Void>? {
+            cleanupDeallocatedObjects()
+            return storage[id]?.dismissBridge
+        }
+
+        func setVisibilityBridge(_ bridge: AsyncPassthroughSubject<Bool>, for id: ObjectIdentifier, owner: AnyObject) {
+            let existing = storage[id]
+            storage[id] = WeakBox(
+                owner: owner,
+                visibilityBridge: bridge,
+                dismissBridge: existing?.dismissBridge
+            )
+        }
+
+        func setDismissBridge(_ bridge: AsyncPassthroughSubject<Void>, for id: ObjectIdentifier, owner: AnyObject) {
+            let existing = storage[id]
+            storage[id] = WeakBox(
+                owner: owner,
+                visibilityBridge: existing?.visibilityBridge,
+                dismissBridge: bridge
+            )
         }
 
         private func cleanupDeallocatedObjects() {
@@ -73,39 +105,72 @@
         }
 
         private static let swizzlingToken: Void = {
-            let originalSelector = #selector(viewDidDisappear(_:))
-            let swizzledSelector = #selector(asyncFlow_viewDidDisappear(_:))
+            // viewDidAppear swizzling
+            let originalAppearSelector = #selector(viewDidAppear(_:))
+            let swizzledAppearSelector = #selector(asyncFlow_viewDidAppear(_:))
 
-            guard let originalMethod = class_getInstanceMethod(UIViewController.self, originalSelector),
-                  let swizzledMethod = class_getInstanceMethod(UIViewController.self, swizzledSelector)
-            else {
-                return
+            if let originalMethod = class_getInstanceMethod(UIViewController.self, originalAppearSelector),
+               let swizzledMethod = class_getInstanceMethod(UIViewController.self, swizzledAppearSelector)
+            {
+                method_exchangeImplementations(originalMethod, swizzledMethod)
             }
 
+            // viewDidDisappear swizzling
+            let originalDisappearSelector = #selector(viewDidDisappear(_:))
+            let swizzledDisappearSelector = #selector(asyncFlow_viewDidDisappear(_:))
+
+            if let originalMethod = class_getInstanceMethod(UIViewController.self, originalDisappearSelector),
+               let swizzledMethod = class_getInstanceMethod(UIViewController.self, swizzledDisappearSelector)
+            {
             method_exchangeImplementations(originalMethod, swizzledMethod)
+            }
         }()
+
+        @objc func asyncFlow_viewDidAppear(_ animated: Bool) {
+            asyncFlow_viewDidAppear(animated)
+
+            Task { @MainActor in
+                let id = ObjectIdentifier(self)
+                if let bridge = PresentableBridgeStorage.shared.getVisibilityBridge(for: id) {
+                    bridge.send(true)
+                }
+            }
+        }
 
         @objc func asyncFlow_viewDidDisappear(_ animated: Bool) {
             asyncFlow_viewDidDisappear(animated)
 
-            guard isBeingDismissed || isMovingFromParent else { return }
-
             Task { @MainActor in
                 let id = ObjectIdentifier(self)
-                if let bridge = PresentableBridgeStorage.shared.getBridge(for: id) {
-                    bridge.yield(())
+
+                // visibility 업데이트
+                if let visibilityBridge = PresentableBridgeStorage.shared.getVisibilityBridge(for: id) {
+                    visibilityBridge.send(false)
+                }
+
+                // dismiss 체크
+                guard isBeingDismissed || isMovingFromParent else { return }
+
+                if let dismissBridge = PresentableBridgeStorage.shared.getDismissBridge(for: id) {
+                    dismissBridge.send(())
                 }
             }
         }
     }
 
+    // MARK: - UINavigationController Convenience
+
     public extension UINavigationController {
+        /// Flow의 root ViewController 설정
         func setFlowRoot(_ viewController: UIViewController) {
             setViewControllers([viewController], animated: false)
         }
     }
 
+    // MARK: - UITabBarController Convenience
+
     public extension UITabBarController {
+        /// Flow의 탭 ViewController들 설정
         func setFlowControllers(_ controllers: [UIViewController]) {
             viewControllers = controllers
         }

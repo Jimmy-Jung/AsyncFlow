@@ -16,8 +16,38 @@ public extension Project {
         bundleId: String,
         deploymentTargets: DeploymentTargets = .iOS("16.0"),
         dependencies: [TargetDependency] = [],
-        settings: Settings? = nil
+        settings: Settings? = nil,
+        includeTestPlan: Bool = true
     ) -> Project {
+        let targets = makeTargets(
+            name: name,
+            bundleId: bundleId,
+            deploymentTargets: deploymentTargets,
+            dependencies: dependencies,
+            settings: settings
+        )
+
+        let schemes = makeSchemes(
+            name: name,
+            includeTestPlan: includeTestPlan
+        )
+
+        return Project(
+            name: name,
+            targets: targets,
+            schemes: schemes
+        )
+    }
+
+    // MARK: - Private Helpers
+
+    private static func makeTargets(
+        name: String,
+        bundleId: String,
+        deploymentTargets: DeploymentTargets,
+        dependencies: [TargetDependency],
+        settings: Settings?
+    ) -> [Target] {
         let appTarget = Target.target(
             name: name,
             destinations: .iOS,
@@ -43,16 +73,46 @@ public extension Project {
             product: .unitTests,
             bundleId: "\(bundleId).tests",
             deploymentTargets: deploymentTargets,
-            sources: ["Tests/**"],
-            dependencies: [
-                .target(name: name),
-            ]
+            sources: ["Tests/UnitTests/**", "Tests/Helpers/**"],
+            dependencies: [.target(name: name)]
         )
 
-        return Project(
-            name: name,
-            targets: [appTarget, testTarget]
+        let uiTestTarget = Target.target(
+            name: "\(name)UITests",
+            destinations: .iOS,
+            product: .uiTests,
+            bundleId: "\(bundleId).uitests",
+            deploymentTargets: deploymentTargets,
+            sources: ["Tests/UITests/**"],
+            dependencies: [.target(name: name)]
         )
+
+        return [appTarget, testTarget, uiTestTarget]
+    }
+
+    private static func makeSchemes(
+        name: String,
+        includeTestPlan: Bool
+    ) -> [Scheme] {
+        let testAction: TestAction = includeTestPlan
+            ? .testPlans([.relativeToManifest("\(name).xctestplan")])
+            : .targets([
+                .init(stringLiteral: "\(name)Tests"),
+                .init(stringLiteral: "\(name)UITests"),
+            ], configuration: .debug)
+
+        return [
+            Scheme.scheme(
+                name: name,
+                shared: true,
+                buildAction: .buildAction(targets: [.init(stringLiteral: name)]),
+                testAction: testAction,
+                runAction: .runAction(configuration: .debug),
+                archiveAction: .archiveAction(configuration: .release),
+                profileAction: .profileAction(configuration: .release),
+                analyzeAction: .analyzeAction(configuration: .debug)
+            ),
+        ]
     }
 }
 
