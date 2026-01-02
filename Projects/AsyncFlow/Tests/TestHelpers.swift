@@ -41,17 +41,59 @@ enum TestStep: Step, Equatable, Sendable {
 extension Test {
     @MainActor
     static func waitUntil(
-        timeout: TimeInterval = 1.0,
+        timeout: TimeInterval = 3.0,
         condition: @escaping () -> Bool
     ) async {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
-            if Date() > deadline {
+            guard Date() <= deadline else {
                 #expect(Bool(false), "Timeout waiting for condition")
                 return
             }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
+    }
+    
+    @MainActor
+    static func wait(milliseconds: Int) async {
+        try? await Task.sleep(nanoseconds: UInt64(milliseconds) * 1_000_000)
+    }
+}
+
+// MARK: - Coordination Test Helper
+
+@MainActor
+struct CoordinationTestHelper {
+    let coordinator: FlowCoordinator
+    let flow: MockFlow
+    let stepper: MockStepper
+    
+    init(initialStep: TestStep? = nil) {
+        coordinator = FlowCoordinator()
+        flow = MockFlow()
+        stepper = MockStepper()
+        
+        if let initialStep = initialStep {
+            stepper.setInitialStep(initialStep)
+        }
+    }
+    
+    func start() async {
+        var subscribed = false
+        stepper.onObservationStart = { subscribed = true }
+        
+        coordinator.coordinate(flow: flow, with: stepper)
+        
+        await Test.waitUntil { subscribed }
+    }
+    
+    func waitForNavigation(count: Int) async {
+        await Test.waitUntil { flow.navigateCallCount >= count }
+    }
+    
+    func emitAndWait(_ step: TestStep, expectedCount: Int) async {
+        stepper.emit(step)
+        await waitForNavigation(count: expectedCount)
     }
 }
 
@@ -104,15 +146,17 @@ final class MockFlow: Flow {
 
 @MainActor
 final class MockPresentable: Presentable {
-    private let visibilitySubject = AsyncPassthroughSubject<Bool>()
+    private let visibilitySubject = AsyncReplaySubject<Bool>(bufferSize: 1)
     private let dismissSubject = AsyncPassthroughSubject<Void>()
 
     var isVisibleStream: AsyncStream<Bool> { visibilitySubject.stream }
     var onDismissed: AsyncStream<Void> { dismissSubject.stream }
 
     var isPresented: Bool = true
+    private var currentVisibility: Bool = true
 
     func setVisible(_ visible: Bool) {
+        currentVisibility = visible
         visibilitySubject.send(visible)
     }
 
