@@ -124,12 +124,14 @@ final class ScreenViewController: UIViewController {
         iconLabel.font = .systemFont(ofSize: 32)
         iconLabel.textAlignment = .center
         iconLabel.translatesAutoresizingMaskIntoConstraints = false
+        iconLabel.accessibilityIdentifier = "screenIcon"
         iconContainer.addSubview(iconLabel)
 
         titleLabel.text = config.title
         titleLabel.font = .boldSystemFont(ofSize: 28)
         titleLabel.textAlignment = .left
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.accessibilityIdentifier = "screenTitle"
 
         headerStack.addArrangedSubview(iconContainer)
         headerStack.addArrangedSubview(titleLabel)
@@ -267,15 +269,20 @@ final class ScreenViewController: UIViewController {
     }
 
     private func configureButton(_ button: UIButton, title: String, action: Selector) {
-        button.setTitle(title, for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 16)
-        button.backgroundColor = .systemGray5
-        button.setTitleColor(.label, for: .normal)
-        button.layer.cornerRadius = 8
-        button.contentEdgeInsets = UIEdgeInsets(top: 10, left: 15, bottom: 10, right: 15)
+        var config = UIButton.Configuration.filled()
+        config.title = title
+        config.baseBackgroundColor = .systemGray5
+        config.baseForegroundColor = .label
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 15, bottom: 10, trailing: 15)
+        config.cornerStyle = .medium
+
+        button.configuration = config
         button.addTarget(self, action: action, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+
+        // UI 테스트를 위한 접근성 식별자 설정
+        button.accessibilityIdentifier = title
     }
 
     // MARK: - Button Actions
@@ -346,7 +353,9 @@ final class ScreenViewController: UIViewController {
         // Jump to Screen 버튼 활성화/비활성화
         for view in jumpStackView.arrangedSubviews {
             if let button = view as? UIButton {
-                let isCurrentScreen = DemoStep.Screen.allCases.first(where: { $0.hashValue == button.tag }) == state.config.screen
+                let screen = DemoStep.Screen.allCases
+                    .first(where: { $0.hashValue == button.tag })
+                let isCurrentScreen = screen == state.config.screen
                 button.isEnabled = !isCurrentScreen
                 button.alpha = isCurrentScreen ? 0.5 : 1.0
             }
