@@ -11,7 +11,7 @@ final class NavigationStackViewModel: ObservableObject {
 
     // MARK: - Published Properties
 
-    @Published var stack: [DemoStep.Screen] = []
+    @Published var stack: [DemoStep.Screen]
 
     // 고정 높이
     static let fixedHeight: CGFloat = 180
@@ -22,6 +22,13 @@ final class NavigationStackViewModel: ObservableObject {
         // 초기 상태: Screen A만 존재
         stack = [.a]
     }
+
+    #if DEBUG
+        /// 테스트 전용 초기화 (각 테스트마다 독립적인 상태 보장)
+        init(initialStack: [DemoStep.Screen] = [.a]) {
+            stack = initialStack
+        }
+    #endif
 
     // MARK: - Public Methods
 
