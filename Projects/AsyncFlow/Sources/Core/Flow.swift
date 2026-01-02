@@ -113,7 +113,8 @@ public extension Flow {
 
 // MARK: - Flow Ready Subject
 
-private var flowReadySubjectKey: UInt8 = 0
+// Associated Object key - 메모리 주소만 사용되므로 실제로 동시성 문제 없음
+nonisolated(unsafe) private var flowReadySubjectKey: UInt8 = 0
 
 extension Flow {
     /// Flow가 준비되었을 때 true를 방출하는 Subject
