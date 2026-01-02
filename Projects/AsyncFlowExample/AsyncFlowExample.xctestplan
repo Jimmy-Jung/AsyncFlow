@@ -1,0 +1,39 @@
+{
+  "configurations" : [
+    {
+      "id" : "F5E9E9F0-9F9F-4F9F-9F9F-9F9F9F9F9F9F",
+      "name" : "Configuration 1",
+      "options" : {
+        "maximumTestExecutionTimeAllowance" : 60,
+        "parallelizable" : true
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "parallelizable" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:AsyncFlowExample.xcodeproj",
+      "identifier" : "AsyncFlowExample",
+      "name" : "AsyncFlowExample"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:AsyncFlowExample.xcodeproj",
+        "identifier" : "7C893D18D500A3AE09FCCA17",
+        "name" : "AsyncFlowExampleTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:AsyncFlowExample.xcodeproj",
+        "identifier" : "5C6845185A53F19918DB73EF",
+        "name" : "AsyncFlowExampleUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
