@@ -50,20 +50,20 @@ enum DemoStep: Step, Equatable {
 
     /// 화면 식별자
     enum Screen: String, Equatable, CaseIterable {
-        case screenA
-        case screenB
-        case screenC
-        case screenD
-        case screenE
+        case a
+        case b
+        case c
+        case d
+        case e
 
         /// Step으로 변환
         var step: DemoStep {
             switch self {
-            case .screenA: return .screenA
-            case .screenB: return .screenB
-            case .screenC: return .screenC
-            case .screenD: return .screenD
-            case .screenE: return .screenE
+            case .a: return .screenA
+            case .b: return .screenB
+            case .c: return .screenC
+            case .d: return .screenD
+            case .e: return .screenE
             }
         }
     }

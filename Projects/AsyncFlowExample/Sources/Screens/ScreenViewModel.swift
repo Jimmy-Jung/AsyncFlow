@@ -1,5 +1,6 @@
 import AsyncFlow
 import AsyncViewModel
+import Combine
 import Foundation
 
 @AsyncViewModel
@@ -43,6 +44,7 @@ final class ScreenViewModel: ObservableObject, FlowStepper {
 
     @Published var state: State
     @Steps var steps
+    private var stackCancellable: AnyCancellable?
 
     var initialStep: Step {
         NoneStep()
@@ -70,6 +72,26 @@ final class ScreenViewModel: ObservableObject, FlowStepper {
             canGoToRoot: depth >= 1,
             nextScreen: nextScreen
         )
+
+        // NavigationStackViewModel의 스택 변경 구독
+        observeNavigationStack(currentScreen: screen)
+    }
+
+    // MARK: - Private Methods
+
+    private func observeNavigationStack(currentScreen _: DemoStep.Screen) {
+        stackCancellable = NavigationStackViewModel.shared.$stack
+            .map { stack -> String in
+                let depth = stack.count - 1
+                let stackDescription = stack.map { $0.rawValue.uppercased() }.joined(separator: " → ")
+                return "Depth: \(depth) | \(stackDescription)"
+            }
+            .sink { [weak self] (info: String) in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.state.stackInfo = info
+                }
+            }
     }
 
     // MARK: - FlowStepper
@@ -92,9 +114,7 @@ final class ScreenViewModel: ObservableObject, FlowStepper {
             return [.navigateToScreen(screen)]
         case let .deepLinkButtonTapped(screen):
             return [.navigateDeepLink(screen)]
-        case .viewDidAppear:
-            return [.updateStackInfo("Loading stack info...")]
-        case .viewDidDisappear:
+        case .viewDidAppear, .viewDidDisappear:
             return []
         }
     }
@@ -105,7 +125,7 @@ final class ScreenViewModel: ObservableObject, FlowStepper {
         switch action {
         case .navigateToNext:
             if let next = state.nextScreen {
-                steps.send(next.toStep())
+                steps.send(next.step)
             }
             return [.none]
 
@@ -141,17 +161,5 @@ final class ScreenViewModel: ObservableObject, FlowStepper {
 
     func handleError(_ error: SendableError) {
         print("Error in ScreenViewModel: \(error.localizedDescription)")
-    }
-}
-
-extension DemoStep.Screen {
-    func toStep() -> DemoStep {
-        switch self {
-        case .screenA: return .screenA
-        case .screenB: return .screenB
-        case .screenC: return .screenC
-        case .screenD: return .screenD
-        case .screenE: return .screenE
-        }
     }
 }

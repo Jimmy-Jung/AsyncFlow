@@ -71,10 +71,12 @@ final class MainFlow: Flow {
         // Push
         navigationController.pushViewController(viewController, animated: true)
 
-        return .one(flowContributor: .contribute(
-            withNextPresentable: viewController,
-            withNextStepper: viewModel
-        ))
+        return .one(
+            flowContributor: .contribute(
+                withNextPresentable: viewController,
+                withNextStepper: viewModel
+            )
+        )
     }
 
     private func goBack(count: Int = 1) -> FlowContributors {
@@ -121,16 +123,22 @@ final class MainFlow: Flow {
         for (index, targetScreen) in path.enumerated() {
             let viewModel = ScreenViewModel(screen: targetScreen, depth: index + 1)
             let viewController = ScreenViewController(viewModel: viewModel)
-            navigationController.pushViewController(viewController, animated: index == path.count - 1)
+            navigationController.pushViewController(
+                viewController,
+                animated: index == path.count - 1
+            )
         }
 
         // 마지막 ViewModel을 contributor로 반환
         if let lastScreen = path.last,
-           let lastVC = navigationController.viewControllers.last as? ScreenViewController {
-            return .one(flowContributor: .contribute(
-                withNextPresentable: lastVC,
-                withNextStepper: lastVC.viewModel
-            ))
+           let lastVC = navigationController.viewControllers.last as? ScreenViewController
+        {
+            return .one(
+                flowContributor: .contribute(
+                    withNextPresentable: lastVC,
+                    withNextStepper: lastVC.viewModel
+                )
+            )
         }
 
         return .none
