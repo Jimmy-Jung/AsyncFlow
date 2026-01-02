@@ -120,6 +120,8 @@ final class MainFlow: Flow {
             return .none
         }
 
+        var contributors: [FlowContributor] = []
+
         for (index, targetScreen) in path.enumerated() {
             let viewModel = ScreenViewModel(screen: targetScreen, depth: index + 1)
             let viewController = ScreenViewController(viewModel: viewModel)
@@ -127,21 +129,18 @@ final class MainFlow: Flow {
                 viewController,
                 animated: index == path.count - 1
             )
-        }
 
-        // 마지막 ViewModel을 contributor로 반환
-        if let lastScreen = path.last,
-           let lastVC = navigationController.viewControllers.last as? ScreenViewController
-        {
-            return .one(
-                flowContributor: .contribute(
-                    withNextPresentable: lastVC,
-                    withNextStepper: lastVC.viewModel
+            // 모든 ViewController와 ViewModel을 Contributor로 등록
+            contributors.append(
+                .contribute(
+                    withNextPresentable: viewController,
+                    withNextStepper: viewModel
                 )
             )
         }
 
-        return .none
+        // 모든 화면의 ViewModel을 FlowCoordinator에 연결
+        return .multiple(flowContributors: contributors)
     }
 
     // MARK: - Helper Methods
