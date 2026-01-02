@@ -5,6 +5,9 @@
 //  Created by 정준영 on 2025. 12. 29.
 //
 
+import Foundation
+import ObjectiveC
+
 #if canImport(UIKit)
     import UIKit
 #endif
@@ -110,7 +113,7 @@ public extension Flow {
 
 // MARK: - Flow Ready Subject
 
-private var flowReadySubjectKey: UInt8 = 0
+private let flowReadySubjectKey: UInt8 = 0
 
 extension Flow {
     /// Flow가 준비되었을 때 true를 방출하는 Subject
