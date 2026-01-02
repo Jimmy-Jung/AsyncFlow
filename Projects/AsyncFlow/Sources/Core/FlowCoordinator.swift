@@ -114,35 +114,20 @@ public final class FlowCoordinator {
         with stepper: FlowStepper,
         allowStepWhenDismissed: Bool = false
     ) {
-        print("🎯 FlowCoordinator.coordinate called for flow: \(type(of: flow))")
         currentFlow = flow
         self.allowStepWhenDismissed = allowStepWhenDismissed
 
-        // Step Subject 구독 시작
         startListeningToSteps(for: flow)
 
-        // Task가 시작될 때까지 잠시 대기 (버퍼링이 제대로 작동하도록)
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 10_000_000) // 0.01초 대기
-
-            // initialStep을 stepsSubject에 전송
-            // AsyncReplaySubject가 버퍼링을 지원하므로 안전함
             let initialStep = stepper.initialStep
-            print("📤 Sending initialStep: \(initialStep)")
             if !(initialStep is NoneStep) {
                 self.stepsSubject.send(initialStep)
-                print("✅ initialStep sent to stepsSubject")
-            } else {
-                print("⚠️ initialStep is NoneStep, skipping")
             }
         }
 
-        // readyToEmitSteps 호출
         stepper.readyToEmitSteps()
-
-        // 이후 Step 이벤트 구독
         startListeningToStepperEvents(stepper, for: flow)
-        print("✅ FlowCoordinator.coordinate completed")
     }
 
     /// 외부에서 Step을 직접 주입
@@ -158,27 +143,13 @@ public final class FlowCoordinator {
 
     // MARK: - Private Methods
 
-    /// Step Subject 구독
     private func startListeningToSteps(for flow: Flow) {
-        print("👂 startListeningToSteps called")
         let taskId = UUID()
         let task = Task { @MainActor [weak self, weak flow] in
-            guard let flow = flow else {
-                print("⚠️ flow is nil in startListeningToSteps")
-                return
-            }
-            guard let self = self else {
-                print("⚠️ self is nil in startListeningToSteps")
-                return
-            }
+            guard let flow = flow, let self = self else { return }
 
-            print("👂 Starting to listen to stepsSubject.stream")
             for await step in self.stepsSubject.stream {
-                guard !Task.isCancelled else {
-                    print("⚠️ Task cancelled")
-                    break
-                }
-                print("📥 Received step from stream: \(step)")
+                guard !Task.isCancelled else { break }
                 await self.handleStep(step, in: flow)
             }
 
@@ -186,85 +157,59 @@ public final class FlowCoordinator {
         }
 
         activeTasks[taskId] = task
-        print("✅ Task registered for listening to steps")
 
-        // Flow dismiss 시 정리
         if !allowStepWhenDismissed {
-            let dismissTaskId = UUID()
-            let dismissTask = Task { [weak self, weak flow] in
-                guard let flow = flow else { return }
-
-                for await _ in flow.onDismissed {
-                    self?.cleanup()
-                    break
-                }
-
-                self?.removeTask(dismissTaskId)
-            }
-            activeTasks[dismissTaskId] = dismissTask
+            registerDismissHandler(for: flow, taskId: taskId)
         }
     }
 
-    /// FlowStepper 이벤트 구독 (initialStep 제외)
     private func startListeningToStepperEvents(_ stepper: FlowStepper, for flow: Flow) {
         let taskId = UUID()
-        let task = Task { [weak self, weak stepper] in
-            guard let stepper = stepper else { return }
-
-            // Stepper의 steps 스트림 구독
-            for await step in stepper.steps.stream {
-                guard !Task.isCancelled else { break }
-
-                if step is NoneStep { continue }
-                self?.stepsSubject.send(step)
-            }
-
-            self?.removeTask(taskId)
-        }
-
+        let task = createStepperListenerTask(stepper: stepper)
         activeTasks[taskId] = task
 
-        // Flow dismiss 시 구독 해제
         if !allowStepWhenDismissed {
-            let dismissTaskId = UUID()
-            let dismissTask = Task { [weak self, weak flow] in
-                guard let flow = flow else { return }
-
-                for await _ in flow.onDismissed {
-                    self?.activeTasks[taskId]?.cancel()
-                    break
-                }
-
-                self?.removeTask(dismissTaskId)
-            }
-            activeTasks[dismissTaskId] = dismissTask
+            registerFlowDismissHandler(for: flow, cancelingTask: taskId)
         }
     }
 
-    /// Step 처리
-    private func handleStep(_ step: Step, in flow: Flow) async {
-        print("🔄 handleStep called with step: \(step)")
-        // Step 적응 (필터링)
-        let adaptedStep = await flow.adapt(step: step)
-        print("🔄 adaptedStep: \(adaptedStep)")
-        if adaptedStep is NoneStep {
-            print("⚠️ adaptedStep is NoneStep, returning")
-            return
-        }
+    private func createStepperListenerTask(stepper: FlowStepper) -> Task<Void, Never> {
+        Task { [weak self, weak stepper] in
+            guard let stepper = stepper else { return }
 
-        // willNavigate 이벤트 발생
+            for await step in stepper.steps.stream {
+                guard !Task.isCancelled, !(step is NoneStep) else { continue }
+                self?.stepsSubject.send(step)
+            }
+        }
+    }
+
+    private func registerFlowDismissHandler(for flow: Flow, cancelingTask taskId: UUID) {
+        let dismissTaskId = UUID()
+        let dismissTask = Task { [weak self, weak flow] in
+            guard let flow = flow else { return }
+
+            for await _ in flow.onDismissed {
+                self?.activeTasks[taskId]?.cancel()
+                break
+            }
+
+            self?.removeTask(dismissTaskId)
+        }
+        activeTasks[dismissTaskId] = dismissTask
+    }
+
+    private func handleStep(_ step: Step, in flow: Flow) async {
+        let adaptedStep = await flow.adapt(step: step)
+        guard !(adaptedStep is NoneStep) else { return }
+
         let event = NavigationEvent(flow: flow, step: adaptedStep)
         willNavigateBridge.send(event)
 
-        // 네비게이션 수행
-        print("🚀 Calling flow.navigate(to: \(adaptedStep))")
         let contributors = flow.navigate(to: adaptedStep)
-        print("✅ flow.navigate returned: \(contributors)")
 
-        // didNavigate 이벤트 발생
         didNavigateBridge.send(event)
 
-        // FlowContributors 처리
         await handleFlowContributors(contributors, in: flow)
     }
 
@@ -342,7 +287,6 @@ public final class FlowCoordinator {
         }
     }
 
-    /// Presentable/FlowStepper 이벤트 구독 (initialStep 제외)
     private func startListeningToPresentableStepperEvents(
         presentable: Presentable,
         stepper: FlowStepper,
@@ -351,22 +295,23 @@ public final class FlowCoordinator {
         allowStepWhenDismissed: Bool
     ) {
         let taskId = UUID()
+        let visibilityState = VisibilityState()
+
+        if !allowStepWhenNotPresented {
+            registerVisibilityHandler(for: presentable, state: visibilityState)
+        }
+
         let task = Task { [weak self, weak stepper] in
             guard let stepper = stepper else { return }
 
-            // Stepper의 steps 스트림 구독
             for await step in stepper.steps.stream {
-                guard !Task.isCancelled else { break }
+                guard !Task.isCancelled, !(step is NoneStep) else { continue }
 
-                if step is NoneStep { continue }
-
-                // allowStepWhenNotPresented 체크
-                if !allowStepWhenNotPresented {
-                    // isVisibleStream의 현재 상태 확인은 복잡하므로 일단 항상 허용
-                    // FIXME: 필요시 pausable 로직 구현
+                if allowStepWhenNotPresented {
+                    self?.stepsSubject.send(step)
+                } else {
+                    await self?.handleStepWithVisibility(step, state: visibilityState)
                 }
-
-                self?.stepsSubject.send(step)
             }
 
             self?.removeTask(taskId)
@@ -374,18 +319,8 @@ public final class FlowCoordinator {
 
         activeTasks[taskId] = task
 
-        // Presentable dismiss 시 구독 해제
         if !allowStepWhenDismissed {
-            let dismissTaskId = UUID()
-            let dismissTask = Task { [weak self] in
-                for await _ in presentable.onDismissed {
-                    self?.activeTasks[taskId]?.cancel()
-                    break
-                }
-
-                self?.removeTask(dismissTaskId)
-            }
-            activeTasks[dismissTaskId] = dismissTask
+            registerPresentableDismissHandler(for: presentable, taskId: taskId)
         }
     }
 
@@ -425,7 +360,78 @@ public final class FlowCoordinator {
         }
     }
 
-    /// Task 제거
+    private func registerDismissHandler(for flow: Flow, taskId _: UUID) {
+        let dismissTaskId = UUID()
+        let dismissTask = Task { [weak self, weak flow] in
+            guard let flow = flow else { return }
+
+            for await _ in flow.onDismissed {
+                self?.cleanup()
+                break
+            }
+
+            self?.removeTask(dismissTaskId)
+        }
+        activeTasks[dismissTaskId] = dismissTask
+    }
+
+    private func registerPresentableDismissHandler(for presentable: Presentable, taskId: UUID) {
+        let dismissTaskId = UUID()
+        let dismissTask = Task { [weak self] in
+            for await _ in presentable.onDismissed {
+                self?.activeTasks[taskId]?.cancel()
+                break
+            }
+
+            self?.removeTask(dismissTaskId)
+        }
+        activeTasks[dismissTaskId] = dismissTask
+    }
+
+    private func registerVisibilityHandler(for presentable: Presentable, state: VisibilityState) {
+        let visibilityTaskId = UUID()
+        let visibilityTask = Task { [weak self] in
+            for await isVisible in presentable.isVisibleStream {
+                state.isVisible = isVisible
+                state.isInitialized = true
+
+                if isVisible {
+                    for bufferedStep in state.bufferedSteps {
+                        self?.stepsSubject.send(bufferedStep)
+                    }
+                    state.bufferedSteps.removeAll()
+                }
+            }
+
+            self?.removeTask(visibilityTaskId)
+        }
+        activeTasks[visibilityTaskId] = visibilityTask
+    }
+
+    private func handleStepWithVisibility(_ step: Step, state: VisibilityState) async {
+        if !state.isInitialized {
+            await waitForVisibilityInitialization(state: state)
+        }
+
+        if state.isVisible {
+            stepsSubject.send(step)
+        } else {
+            state.bufferedSteps.append(step)
+        }
+    }
+
+    private func waitForVisibilityInitialization(state: VisibilityState) async {
+        let deadline = Date().addingTimeInterval(1.0)
+        while !state.isInitialized, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        if !state.isInitialized {
+            state.isVisible = true
+            state.isInitialized = true
+        }
+    }
+
     private func removeTask(_ id: UUID) {
         activeTasks[id]?.cancel()
         activeTasks.removeValue(forKey: id)
@@ -445,6 +451,16 @@ public final class FlowCoordinator {
         }
         childFlowCoordinators.removeAll()
     }
+}
+
+// MARK: - VisibilityState
+
+/// Presentable의 가시성 상태를 추적하는 클래스
+@MainActor
+private final class VisibilityState {
+    var isVisible: Bool = true // 기본값은 true (초기에 보이는 상태로 가정)
+    var isInitialized: Bool = false // 가시성 스트림에서 첫 값을 받았는지 여부
+    var bufferedSteps: [Step] = []
 }
 
 // MARK: - NavigationEvent
