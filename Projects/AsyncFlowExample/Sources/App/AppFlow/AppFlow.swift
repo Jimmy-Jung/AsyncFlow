@@ -2,170 +2,104 @@
 //  AppFlow.swift
 //  AsyncFlowExample
 //
-//  Created by jimmy on 2026. 1. 1.
+//  Created by jimmy on 2026. 1. 3.
 //
 
 import AsyncFlow
-import SwiftUI
 import UIKit
 
-/// 앱의 최상위 Flow
+/// 앱 전체 Flow 관리
 @MainActor
 final class AppFlow: Flow {
     // MARK: - Properties
 
-    var root: any Presentable {
-        rootViewController
-    }
+    var root: Presentable { rootWindow }
 
-    private let rootViewController: RootViewController
-    private var mainFlow: MainFlow?
+    private let rootWindow: UIWindow
+    private let tabBarFlow: TabBarFlow
 
     // MARK: - Initialization
 
     init(window: UIWindow) {
-        rootViewController = RootViewController(window: window)
+        rootWindow = window
+        tabBarFlow = TabBarFlow()
     }
 
-    // MARK: - Flow Protocol
+    // MARK: - Navigation
 
     func navigate(to step: Step) -> FlowContributors {
-        guard let demoStep = step as? DemoStep else { return .none }
+        // AppStep: 앱 레벨 네비게이션
+        if let appStep = step as? AppStep {
+            return handleAppStep(appStep)
+        }
 
-        switch demoStep {
-        case .screenA:
-            return navigateToMain()
+        // TabAStep, TabBStep: TabBarFlow로 전달
+        if step is TabAStep || step is TabBStep {
+            return .one(flowContributor: .forwardToParentFlow(withStep: step))
+        }
+
+        // ModalStep: Modal 관리
+        if let modalStep = step as? ModalStep {
+            return handleModalStep(modalStep)
+        }
+
+        return .none
+    }
+
+    // MARK: - App Step Handling
+
+    private func handleAppStep(_ step: AppStep) -> FlowContributors {
+        switch step {
+        case .appDidStart:
+            return startApp()
         default:
-            // MainFlow에 위임
-            return .one(flowContributor: .forwardToCurrentFlow(withStep: demoStep))
+            // 크로스 탭 네비게이션은 TabBarFlow로 전달
+            return .one(flowContributor: .forwardToParentFlow(withStep: step))
         }
     }
 
-    // MARK: - Navigation Methods
-
-    private func navigateToMain() -> FlowContributors {
-        let mainFlow = MainFlow()
-        self.mainFlow = mainFlow
-
-        // RootViewController에 MainFlow의 root 설정
-        guard let navigationController = mainFlow.root.viewController as? UINavigationController else {
-            fatalError("MainFlow.root must be a UINavigationController")
-        }
-        rootViewController.setContent(navigationController)
+    private func startApp() -> FlowContributors {
+        rootWindow.rootViewController = tabBarFlow.tabBarController
+        rootWindow.makeKeyAndVisible()
 
         return .one(flowContributor: .contribute(
-            withNextPresentable: mainFlow,
-            withNextStepper: OneStepper(withSingleStep: DemoStep.screenA)
+            withNextPresentable: tabBarFlow,
+            withNextStepper: OneStepper(withSingleStep: AppStep.appDidStart)
         ))
     }
-}
 
-/// 앱의 Root ViewController
-///
-/// NavigationStack (SwiftUI) + Content (UIKit)를 관리합니다.
-final class RootViewController: UIViewController {
-    // MARK: - Properties
+    // MARK: - Modal Step Handling
 
-    private let window: UIWindow
-    private weak var mainNavController: UINavigationController?
-    private var stackHostingController: UIHostingController<AnyView>?
+    private func handleModalStep(_ step: ModalStep) -> FlowContributors {
+        switch step {
+        case .presentModal:
+            let modalFlow = ModalFlow()
 
-    private let stackViewModel = NavigationStackViewModel.shared
+            // 현재 보이는 ViewController에서 present
+            if let presentingVC = getCurrentViewController() {
+                if let presentable = modalFlow.root as? UIViewController {
+                    presentingVC.present(presentable, animated: true)
+                }
+            }
 
-    // MARK: - Initialization
+            return .one(flowContributor: .contribute(
+                withNextPresentable: modalFlow,
+                withNextStepper: OneStepper(withSingleStep: ModalStep.presentModal)
+            ))
 
-    init(window: UIWindow) {
-        self.window = window
-        super.init(nibName: nil, bundle: nil)
+        case .dismissModal:
+            return .none
+        }
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    // MARK: - Helper
 
-    // MARK: - Lifecycle
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-
-        setupNavigationStack()
-
-        // Window 설정
-        window.rootViewController = self
-        window.makeKeyAndVisible()
-    }
-
-    // MARK: - Setup
-
-    private func setupNavigationStack() {
-        // NavigationStackView (SwiftUI)
-        let stackView = NavigationStackView()
-            .environmentObject(stackViewModel)
-        let hostingController = UIHostingController(rootView: AnyView(stackView))
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-
-        addChild(hostingController)
-        view.addSubview(hostingController.view)
-        hostingController.didMove(toParent: self)
-
-        NSLayoutConstraint.activate([
-            hostingController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            hostingController.view.heightAnchor.constraint(equalToConstant: NavigationStackViewModel.fixedHeight),
-        ])
-
-        stackHostingController = hostingController
-    }
-
-    // MARK: - Public Methods
-
-    func setContent(_ navigationController: UINavigationController) {
-        // 기존 content 제거
-        mainNavController?.willMove(toParent: nil)
-        mainNavController?.view.removeFromSuperview()
-        mainNavController?.removeFromParent()
-
-        // 새 content 추가
-        addChild(navigationController)
-        view.addSubview(navigationController.view)
-
-        navigationController.view.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            navigationController.view.topAnchor.constraint(
-                equalTo: stackHostingController?.view.bottomAnchor ?? view.topAnchor
-            ),
-            navigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            navigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            navigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
-        navigationController.didMove(toParent: self)
-
-        // Delegate 설정
-        navigationController.delegate = self
-        mainNavController = navigationController
-    }
-}
-
-// MARK: - UINavigationControllerDelegate
-
-extension RootViewController: UINavigationControllerDelegate {
-    func navigationController(
-        _: UINavigationController,
-        willShow viewController: UIViewController,
-        animated _: Bool
-    ) {
-        // 애니메이션 시작 직전에 호출 (즉각 반응)
-        guard let screenVC = viewController as? ScreenViewController else { return }
-
-        let screen = screenVC.viewModel.state.config.screen
-        print("🔄 Navigation willShow: \(screen)")
-
-        // NavigationStack 업데이트
-        stackViewModel.updateCurrentScreen(screen)
+    private func getCurrentViewController() -> UIViewController? {
+        guard let tabBarController = rootWindow.rootViewController as? UITabBarController,
+              let navigationController = tabBarController.selectedViewController as? UINavigationController
+        else {
+            return nil
+        }
+        return navigationController.topViewController
     }
 }

@@ -2,69 +2,73 @@
 //  DemoStep.swift
 //  AsyncFlowExample
 //
-//  Created by jimmy on 2026. 1. 1.
+//  Created by jimmy on 2026. 1. 3.
 //
 
 import AsyncFlow
 
-/// 데모앱의 모든 네비게이션 Step 정의
-enum DemoStep: Step, Equatable {
-    // MARK: - Screens
+// MARK: - AppStep
 
-    /// 화면 A (Root)
-    case screenA
+/// 앱 레벨 네비게이션 Step
+enum AppStep: Step, Equatable {
+    /// 앱 시작
+    case appDidStart
 
-    /// 화면 B
-    case screenB
+    /// Tab A로 전환 + 화면 이동
+    case switchToTabAScreen1
+    case switchToTabAScreen2
+    case switchToTabAScreen3
+    case switchToTabAScreen5
 
-    /// 화면 C
-    case screenC
+    /// Tab B로 전환 + 화면 이동
+    case switchToTabBScreen1
+    case switchToTabBScreen3
+    case switchToTabBScreen5
+}
 
-    /// 화면 D
-    case screenD
+// MARK: - TabAStep
 
-    /// 화면 E
-    case screenE
+/// Tab A 네비게이션 Step
+enum TabAStep: Step, Equatable {
+    /// 화면 이동
+    case navigateToScreen1
+    case navigateToScreen2
+    case navigateToScreen3
+    case navigateToScreen4
+    case navigateToScreen5
 
-    // MARK: - Navigation Actions
+    /// 뒤로 가기
+    case popViewController(count: Int = 1)
 
-    /// 1단계 뒤로 가기
-    case goBack
+    /// 루트로 이동
+    case popToRoot
+}
 
-    /// 2단계 뒤로 가기
-    case goBack2
+// MARK: - TabBStep
 
-    /// 3단계 뒤로 가기
-    case goBack3
+/// Tab B 네비게이션 Step
+enum TabBStep: Step, Equatable {
+    /// 화면 이동
+    case navigateToScreen1
+    case navigateToScreen2
+    case navigateToScreen3
+    case navigateToScreen4
+    case navigateToScreen5
 
-    /// 루트 화면으로 이동
-    case goToRoot
+    /// 뒤로 가기
+    case popViewController(count: Int = 1)
 
-    /// 특정 화면으로 이동
-    case goToSpecific(Screen)
+    /// 루트로 이동
+    case popToRoot
+}
 
-    /// DeepLink로 특정 화면 이동
-    case deepLink(Screen)
+// MARK: - ModalStep
 
-    // MARK: - Screen Enum
+/// Modal 네비게이션 Step
+enum ModalStep: Step, Equatable {
+    /// Modal Present
+    case presentModal
 
-    /// 화면 식별자
-    enum Screen: String, Equatable, CaseIterable {
-        case a
-        case b
-        case c
-        case d
-        case e
-
-        /// Step으로 변환
-        var step: DemoStep {
-            switch self {
-            case .a: return .screenA
-            case .b: return .screenB
-            case .c: return .screenC
-            case .d: return .screenD
-            case .e: return .screenE
-            }
-        }
-    }
+    /// Modal Dismiss
+    case dismissModal
 }
