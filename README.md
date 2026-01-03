@@ -393,6 +393,70 @@ coordinator.coordinate(flow: appFlow, with: appStepper)
 
 ## 고급 기능
 
+### 네비게이션 로깅
+
+AsyncFlow는 네비게이션 스택을 추적하고 로깅할 수 있는 기능을 제공합니다.
+
+#### 기본 콘솔 로깅
+
+```swift
+// 콘솔에 로그 출력
+let coordinator = FlowCoordinator(logger: ConsoleFlowLogger())
+```
+
+출력 형식:
+```
+🔄 Navigation willShow: loginSuccess
+📚 Stack updated: loginStart → emailInput → passwordInput → loginSuccess
+```
+
+#### 커스텀 로거 구현
+
+외부 로깅 시스템(OSLog, Firebase, Sentry 등)을 연동할 수 있습니다.
+
+```swift
+import OSLog
+
+final class OSLogFlowLogger: FlowLogger {
+    private let logger = Logger(subsystem: "com.myapp", category: "navigation")
+    
+    func log(navigationStack: NavigationStack) {
+        logger.info("""
+        Flow: \(navigationStack.flowName)
+        Steps: \(navigationStack.steps.map(\.caseDescription).joined(separator: " -> "))
+        Depth: \(navigationStack.depth)
+        """)
+    }
+}
+
+// 사용
+let coordinator = FlowCoordinator(logger: OSLogFlowLogger())
+```
+
+#### Firebase Analytics 예시
+
+```swift
+final class FirebaseFlowLogger: FlowLogger {
+    func log(navigationStack: NavigationStack) {
+        Analytics.logEvent("navigation", parameters: [
+            "flow": navigationStack.flowName,
+            "depth": navigationStack.depth,
+            "current_step": navigationStack.steps.last?.caseDescription ?? "none",
+            "path": navigationStack.steps.map(\.caseDescription).joined(separator: "->")
+        ])
+    }
+}
+```
+
+#### 로깅 비활성화
+
+기본적으로 로깅은 비활성화되어 있습니다.
+
+```swift
+// 로거를 지정하지 않으면 NoOpFlowLogger 사용 (로그 출력 없음)
+let coordinator = FlowCoordinator()
+```
+
 ### Step 적응 (Adaptation)
 
 권한 체크, 로그인 확인 등의 로직을 구현할 수 있습니다.

@@ -5,6 +5,20 @@ AsyncFlow의 모든 주요 변경사항은 이 파일에 문서화됩니다.
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/) 형식을 따르며,
 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [미배포]
+
+### 추가
+
+- 네비게이션 로깅 시스템 추가
+  - `FlowLogger` 프로토콜로 외부 로깅 시스템 주입 가능
+  - `ConsoleFlowLogger` 기본 구현 (콘솔/디버그/OSLog 출력)
+  - `NoOpFlowLogger` (기본값, 로그 출력 없음)
+  - `NavigationStack` 구조체로 Flow별 네비게이션 스택 추적
+  - `StepInfo` 구조체로 Step 정보 표현
+  - FlowCoordinator에 logger 주입 메커니즘 추가
+  - 실시간 네비게이션 로그 출력 (`🔄 Navigation willShow: X`, `📚 Stack updated: A → B → C`)
+  - 로깅 기능 테스트 추가 (`FlowLoggerTests`)
+
 ## [1.0.0] - 2025-01-02
 
 ### 추가
