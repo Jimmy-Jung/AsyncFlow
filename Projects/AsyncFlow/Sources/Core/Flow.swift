@@ -100,6 +100,24 @@ public protocol Flow: AnyObject, Presentable {
     /// - Parameter step: 처리할 Step
     /// - Returns: 다음 Stepper와 Presentable을 포함하는 FlowContributors
     func navigate(to step: Step) -> FlowContributors
+
+    /// Step에 대한 메타데이터 조회 (선택적 구현)
+    ///
+    /// NavigationFlow를 상속하는 경우 자동으로 관리됩니다.
+    ///
+    /// - Parameter step: 메타데이터를 조회할 Step
+    /// - Returns: 메타데이터, 없으면 nil
+    func metadata(for step: Step) -> (any FlowMetadata)?
+
+    /// 현재 스택의 메타데이터 (선택적 구현)
+    ///
+    /// NavigationFlow를 상속하는 경우 자동으로 관리됩니다.
+    var currentStackMetadata: [any FlowMetadata] { get }
+
+    /// 메타데이터 변경 알림 스트림 (선택적 구현)
+    ///
+    /// NavigationFlow를 상속하는 경우 자동으로 관리됩니다.
+    var metadataDidChange: AsyncStream<[any FlowMetadata]> { get }
 }
 
 // MARK: - Default Implementation
@@ -109,12 +127,17 @@ public extension Flow {
 
     var isVisibleStream: AsyncStream<Bool> { root.isVisibleStream }
     var onDismissed: AsyncStream<Void> { root.onDismissed }
+
+    // 메타데이터 기본 구현 (NavigationFlow를 사용하는 경우 override)
+    func metadata(for _: Step) -> (any FlowMetadata)? { nil }
+    var currentStackMetadata: [any FlowMetadata] { [] }
+    var metadataDidChange: AsyncStream<[any FlowMetadata]> { AsyncStream { _ in } }
 }
 
 // MARK: - Flow Ready Subject
 
 // Associated Object key - 메모리 주소만 사용되므로 실제로 동시성 문제 없음
-nonisolated(unsafe) private var flowReadySubjectKey: UInt8 = 0
+private nonisolated(unsafe) var flowReadySubjectKey: UInt8 = 0
 
 extension Flow {
     /// Flow가 준비되었을 때 true를 방출하는 Subject
