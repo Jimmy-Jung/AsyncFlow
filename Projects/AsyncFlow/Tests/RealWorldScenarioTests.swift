@@ -42,7 +42,7 @@ import Testing
 
             // When
             appCoordinator.coordinate(flow: appFlow, with: appStepper)
-            await Test.waitUntil { appFlow.navigateCallCount >= 1 }
+            await Test.waitUntil { appFlow.navigateCallCount >= 2 }
 
             // Then - 로그인 되어있으므로 홈으로
             #expect(appFlow.lastNavigatedStep == .home)
@@ -141,7 +141,7 @@ import Testing
             stepper.emit(ModalStep.presentModal)
             await Test.waitUntil(timeout: 2.0) { mainFlow.modalFlow != nil }
 
-            guard let modal = mainFlow.modalFlow else {
+            guard mainFlow.modalFlow != nil else {
                 #expect(Bool(false), "Modal flow should exist")
                 return
             }

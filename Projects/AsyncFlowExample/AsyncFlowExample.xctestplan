@@ -19,6 +19,13 @@
   },
   "testTargets" : [
     {
+      "target" : {
+        "containerPath" : "container:..\/AsyncFlow\/AsyncFlow.xcodeproj",
+        "identifier" : "0A4C90A9E9455A8618E0FB04",
+        "name" : "AsyncFlowTests"
+      }
+    },
+    {
       "parallelizable" : true,
       "target" : {
         "containerPath" : "container:AsyncFlowExample.xcodeproj",

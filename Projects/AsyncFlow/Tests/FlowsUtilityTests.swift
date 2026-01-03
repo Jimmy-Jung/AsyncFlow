@@ -301,7 +301,7 @@ import Testing
         @MainActor
         func modalFlowPresentation() async {
             // Given
-            let parentVC = UIViewController()
+            _ = UIViewController()
             let modalFlow = TestUIFlow()
             var presented = false
 
