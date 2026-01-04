@@ -9,8 +9,6 @@
 
 Swift Concurrency 기반의 선언적 네비게이션 프레임워크
 
-[English](README_EN.md) | 한국어
-
 </div>
 
 ---
@@ -734,9 +732,6 @@ tuist test AsyncFlow
 ## 문서
 
 - [API 레퍼런스](https://jimmy-jung.github.io/AsyncFlow/documentation/asyncflow/) (DocC)
-- [마이그레이션 가이드](Docs/MIGRATION.md) (RxFlow → AsyncFlow)
-- [아키텍처 가이드](Docs/ARCHITECTURE.md)
-- [FAQ](Docs/FAQ.md)
 
 ---
 
