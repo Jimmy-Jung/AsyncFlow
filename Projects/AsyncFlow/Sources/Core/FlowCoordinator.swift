@@ -94,6 +94,10 @@ public final class FlowCoordinator {
     /// 네비게이션 스택 추적 (Flow별)
     private var navigationStacks: [String: [StepInfo]] = [:]
 
+    /// NavigationFlow별 마지막 로깅된 스택 상태 (중복 로깅 방지용)
+    /// 키가 없으면 아직 로깅된 적이 없음을 의미
+    private var lastLoggedStacks: [String: [StepInfo]] = [:]
+
     /// Flow별 마지막 Step (NavigationFlow 스택 업데이트용)
     private var lastSteps: [String: Step] = [:]
 
@@ -129,12 +133,16 @@ public final class FlowCoordinator {
         self.allowStepWhenDismissed = allowStepWhenDismissed
 
         // NavigationFlow인 경우 onStackChanged 콜백 연결
+        // navigationController(_:didShow:animated:)에서 호출되며,
+        // 실제 viewControllers를 기반으로 스택을 재구성하고 로깅합니다.
         if let navigationFlow = flow as? NavigationFlow {
+            let flowName = String(describing: type(of: flow))
             navigationFlow.onStackChanged = { [weak self, weak navigationFlow] in
                 guard let self = self, let navigationFlow = navigationFlow else { return }
                 Task { @MainActor in
-                    // 시스템 뒤로가기 등으로 스택이 변경되면 로깅
-                    self.updateNavigationStack(for: navigationFlow, with: NoneStep())
+                    // 마지막 Step을 사용하여 스택 업데이트 (실제로는 viewControllers 기반)
+                    let lastStep = self.lastSteps[flowName] ?? NoneStep()
+                    self.updateNavigationStack(for: navigationFlow, with: lastStep)
                 }
             }
         }
@@ -234,7 +242,14 @@ public final class FlowCoordinator {
 
         await handleFlowContributors(contributors, in: flow)
 
-        // 네비게이션 완료 후 실제 스택 업데이트 (NavigationFlow의 경우 viewControllers 기반)
+        // 마지막 Step 저장 (NavigationFlow의 onStackChanged 콜백에서 사용)
+        let flowName = String(describing: type(of: flow))
+        lastSteps[flowName] = adaptedStep
+
+        // 스택 업데이트 및 로깅
+        // NavigationFlow의 경우 여기서 즉시 로깅하고,
+        // navigationController(_:didShow:animated:)에서 onStackChanged 콜백이 호출될 때
+        // 중복 방지 로직이 동일한 스택에 대한 재로깅을 막아줍니다.
         updateNavigationStack(for: flow, with: adaptedStep)
     }
 
@@ -252,10 +267,10 @@ public final class FlowCoordinator {
 
         if let navigationFlow = flow as? NavigationFlow {
             // 실제 viewControllers를 기반으로 스택 재구성 (metadata 포함)
-            currentSteps = navigationFlow.navigationController.viewControllers.compactMap { vc in
-                guard let step = navigationFlow.associatedStep(for: vc) else { return nil }
+            currentSteps = navigationFlow.navigationController.viewControllers.compactMap { viewController in
+                guard let step = navigationFlow.associatedStep(for: viewController) else { return nil }
                 // Stepper에서 metadata 추출
-                let metadata = navigationFlow.associatedStepper(for: vc)?.metadata
+                let metadata = navigationFlow.associatedStepper(for: viewController)?.metadata
                 return StepInfo(step: step, metadata: metadata)
             }
         } else {
@@ -272,12 +287,29 @@ public final class FlowCoordinator {
 
         // 로그 출력 (NavigationFlow의 경우 스택이 비어있어도 출력, 일반 Flow는 비어있지 않은 경우에만)
         if flow is NavigationFlow {
-            // NavigationFlow는 항상 로그 출력 (뒤로가기로 빈 스택이 되어도)
+            // NavigationFlow는 스택 상태가 변경된 경우에만 로그 출력 (중복 로깅 방지)
+            // lastLoggedStacks에 키가 없으면 아직 로깅된 적이 없으므로 항상 로깅
+            if let lastLogged = lastLoggedStacks[flowName] {
+                // StepInfo 배열 비교 (Equatable이 아니므로 수동 비교)
+                // typeName, caseDescription, displayName 모두 비교
+                let isStackChanged = currentSteps.count != lastLogged.count ||
+                    zip(currentSteps, lastLogged).contains { step1, step2 in
+                        step1.typeName != step2.typeName ||
+                            step1.caseDescription != step2.caseDescription ||
+                            step1.displayName != step2.displayName
+                    }
+
+                // 스택이 변경되지 않았으면 로깅하지 않음
+                guard isStackChanged else { return }
+            }
+
+            // 스택이 변경되었거나 첫 로깅인 경우 로깅
             let navigationStack = NavigationStack(
                 flowName: flowName,
                 steps: currentSteps
             )
             logger.log(navigationStack: navigationStack)
+            lastLoggedStacks[flowName] = currentSteps
         } else if !currentSteps.isEmpty {
             // 일반 Flow는 스택이 있을 때만 출력
             let navigationStack = NavigationStack(
@@ -311,16 +343,8 @@ public final class FlowCoordinator {
             parentFlowCoordinator?.childFlowCoordinators.removeValue(forKey: identifier)
         }
 
-        // NavigationFlow인 경우 스택 변경 콜백 등록
-        if let navigationFlow = flow as? NavigationFlow {
-            let flowName = String(describing: type(of: flow))
-            navigationFlow.onStackChanged = { [weak self, weak flow] in
-                guard let flow = flow else { return }
-                // 마지막 Step을 사용하여 스택 업데이트 (실제로는 viewControllers 기반)
-                let lastStep = self?.lastSteps[flowName] ?? NoneStep()
-                self?.updateNavigationStack(for: flow, with: lastStep)
-            }
-        }
+        // NavigationFlow의 경우 onStackChanged 콜백은 coordinate()에서 이미 설정되었으므로
+        // 여기서는 다시 설정하지 않습니다. (중복 로깅 방지)
     }
 
     /// 개별 FlowContributor 처리
