@@ -60,40 +60,18 @@ jobs:
       run: |
         xcodebuild -version
         swift --version
-    
-    - name: Install Tuist
-      run: brew install tuist
-    
-    - name: Install Dependencies
-      run: tuist install
-    
-    - name: Generate Xcode Project
-      run: tuist generate
       
     - name: Build AsyncFlow
-      run: |
-        xcodebuild build \
-          -workspace AsyncFlow.xcworkspace \
-          -scheme AsyncFlow \
-          -sdk iphonesimulator \
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-          -configuration Release \
-          CODE_SIGNING_ALLOWED=NO
+      run: swift build -c release
       
     - name: Test AsyncFlow
-      run: |
-        xcodebuild test \
-          -workspace AsyncFlow.xcworkspace \
-          -scheme AsyncFlow \
-          -sdk iphonesimulator \
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-          -enableCodeCoverage YES \
-          CODE_SIGNING_ALLOWED=NO
+      run: swift test --enable-code-coverage
       
     - name: Generate Coverage Report
       run: |
-        # iOS 빌드의 경우 커버리지 경로가 다름
-        echo "Coverage report generation for iOS build"
+        xcrun llvm-cov export -format="lcov" \
+          .build/debug/AsyncFlowPackageTests.xctest/Contents/MacOS/AsyncFlowPackageTests \
+          -instr-profile .build/debug/codecov/default.profdata > coverage.lcov
       
     - name: Upload Coverage
       if: false  # iOS 빌드는 커버리지 업로드 스킵
