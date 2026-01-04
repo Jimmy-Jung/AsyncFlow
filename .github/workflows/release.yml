@@ -5,6 +5,9 @@ on:
     tags:
       - '*.*.*'
 
+permissions:
+  contents: write
+
 jobs:
   # Job 1: 태그 생성 시 최종 테스트 실행 (CI에서 건너뛴 테스트 대체)
   test:
