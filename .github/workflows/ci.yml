@@ -60,10 +60,20 @@ jobs:
       run: |
         xcodebuild -version
         swift --version
+    
+    - name: Install Tuist
+      run: brew install tuist
+    
+    - name: Install Dependencies
+      run: tuist install
+    
+    - name: Generate Xcode Project
+      run: tuist generate
       
     - name: Build AsyncFlow
       run: |
         xcodebuild build \
+          -workspace AsyncFlow.xcworkspace \
           -scheme AsyncFlow \
           -sdk iphonesimulator \
           -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
@@ -73,6 +83,7 @@ jobs:
     - name: Test AsyncFlow
       run: |
         xcodebuild test \
+          -workspace AsyncFlow.xcworkspace \
           -scheme AsyncFlow \
           -sdk iphonesimulator \
           -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
