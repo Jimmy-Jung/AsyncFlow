@@ -20,21 +20,17 @@ jobs:
           xcodebuild -version
           swift --version
       
-      - name: Build AsyncFlow
-        run: |
-          xcodebuild build \
-            -scheme AsyncFlow \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-            -configuration Release \
-            CODE_SIGNING_ALLOWED=NO
+      - name: Install Tuist
+        run: brew install tuist
+      
+      - name: Install Dependencies
+        run: tuist install
+      
+      - name: Generate Xcode Project
+        run: tuist generate
       
       - name: Test AsyncFlow
-        run: |
-          xcodebuild test \
-            -scheme AsyncFlow \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-            -enableCodeCoverage YES \
-            CODE_SIGNING_ALLOWED=NO
+        run: tuist test AsyncFlow
       
       - name: Generate Coverage Report
         run: |

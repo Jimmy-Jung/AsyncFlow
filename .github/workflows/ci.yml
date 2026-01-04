@@ -60,28 +60,18 @@ jobs:
       run: |
         xcodebuild -version
         swift --version
-      
-    - name: Build AsyncFlow
-      run: |
-        xcodebuild build \
-          -scheme AsyncFlow \
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-          -configuration Release \
-          CODE_SIGNING_ALLOWED=NO
+    
+    - name: Install Tuist
+      run: brew install tuist
+    
+    - name: Install Dependencies
+      run: tuist install
+    
+    - name: Generate Xcode Project
+      run: tuist generate
       
     - name: Test AsyncFlow
-      run: |
-        xcodebuild test \
-          -scheme AsyncFlow \
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-          -enableCodeCoverage YES \
-          CODE_SIGNING_ALLOWED=NO
-      
-    - name: Generate Coverage Report
-      run: |
-        xcrun xccov view --report --json \
-          $(find ~/Library/Developer/Xcode/DerivedData -name '*.xcresult' | head -1)/Info.plist \
-          > coverage.json || echo "Coverage report generation skipped"
+      run: tuist test AsyncFlow
       
     - name: Upload Coverage
       if: false  # iOS 빌드는 커버리지 업로드 스킵
