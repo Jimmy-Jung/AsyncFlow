@@ -62,16 +62,26 @@ jobs:
         swift --version
       
     - name: Build AsyncFlow
-      run: swift build -c release
+      run: |
+        xcodebuild build \
+          -scheme AsyncFlow \
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+          -configuration Release \
+          CODE_SIGNING_ALLOWED=NO
       
     - name: Test AsyncFlow
-      run: swift test --enable-code-coverage
+      run: |
+        xcodebuild test \
+          -scheme AsyncFlow \
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+          -enableCodeCoverage YES \
+          CODE_SIGNING_ALLOWED=NO
       
     - name: Generate Coverage Report
       run: |
-        xcrun llvm-cov export -format="lcov" \
-          .build/debug/AsyncFlowPackageTests.xctest/Contents/MacOS/AsyncFlowPackageTests \
-          -instr-profile .build/debug/codecov/default.profdata > coverage.lcov
+        xcrun xccov view --report --json \
+          $(find ~/Library/Developer/Xcode/DerivedData -name '*.xcresult' | head -1)/Info.plist \
+          > coverage.json || echo "Coverage report generation skipped"
       
     - name: Upload Coverage
       if: false  # iOS 빌드는 커버리지 업로드 스킵
