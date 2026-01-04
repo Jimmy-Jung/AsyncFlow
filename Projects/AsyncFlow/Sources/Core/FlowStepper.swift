@@ -55,6 +55,28 @@ public protocol FlowStepper: AnyObject {
     /// FlowCoordinator가 이 FlowStepper를 구독하기 시작할 때 호출됩니다.
     /// 초기화 시점에 필요한 로직을 여기에 구현할 수 있습니다.
     func readyToEmitSteps()
+
+    /// Stepper의 메타데이터 (선택적 구현)
+    ///
+    /// 화면의 식별 정보를 제공합니다.
+    /// 기본 구현은 타입 이름으로부터 자동 생성됩니다.
+    ///
+    /// ## 사용 예시
+    ///
+    /// ```swift
+    /// // 자동 생성 (구현 불필요)
+    /// final class A_1ViewModel: FlowStepper {
+    ///     // metadata: AutoFlowMetadata(identifier: "A_1ViewModel", displayName: "A-1")
+    /// }
+    ///
+    /// // 커스텀 메타데이터
+    /// final class A_2ViewModel: FlowStepper {
+    ///     var metadata: FlowMetadata {
+    ///         AppFlowMetadata(identifier: "TabA.Screen2", displayName: "A-2", icon: "🟠")
+    ///     }
+    /// }
+    /// ```
+    var metadata: any FlowMetadata { get }
 }
 
 // MARK: - Default Implementation
@@ -65,6 +87,11 @@ public extension FlowStepper {
     }
 
     func readyToEmitSteps() {}
+
+    /// 기본 메타데이터 (타입 정보로 자동 생성)
+    var metadata: any FlowMetadata {
+        AutoFlowMetadata(from: type(of: self))
+    }
 }
 
 // MARK: - Property Wrapper

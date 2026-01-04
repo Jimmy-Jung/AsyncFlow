@@ -73,7 +73,7 @@ public extension Project {
             product: .unitTests,
             bundleId: "\(bundleId).tests",
             deploymentTargets: deploymentTargets,
-            sources: ["Tests/UnitTests/**", "Tests/Helpers/**"],
+            sources: ["Tests/UnitTests/**"],
             dependencies: [.target(name: name)]
         )
 

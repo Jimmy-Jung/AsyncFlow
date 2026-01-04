@@ -5,15 +5,9 @@
 //  Created by 정준영 on 2025. 12. 29.
 //
 
-#if canImport(UIKit)
-    import UIKit
+import UIKit
 
-    public typealias PlatformViewController = UIViewController
-#elseif canImport(AppKit)
-    import AppKit
-
-    public typealias PlatformViewController = NSViewController
-#endif
+public typealias PlatformViewController = UIViewController
 
 /// 화면에 표시될 수 있는 것을 추상화하는 프로토콜
 ///

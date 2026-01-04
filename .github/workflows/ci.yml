@@ -11,11 +11,46 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# release/* 브랜치가 main에 머지되어 태그가 생성될 예정인 경우 CI는 실행하지 않음
+# (release.yml에서 테스트를 실행하므로 중복 방지)
 jobs:
+  check-release-branch:
+    name: Check if Release Branch Merge
+    runs-on: ubuntu-latest
+    outputs:
+      is-release-merge: ${{ steps.check.outputs.is-release-merge }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      
+      - name: Check if merged from release branch
+        id: check
+        run: |
+          # main 브랜치 push가 아니거나 PR인 경우 항상 false
+          if [ "${{ github.event_name }}" != "push" ] || [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "is-release-merge=false" >> $GITHUB_OUTPUT
+            echo "Not a main branch push, running CI tests"
+            exit 0
+          fi
+          
+          # 최근 커밋 메시지에서 release 브랜치 머지 여부 확인
+          if git log --oneline -1 | grep -q "Merge pull request.*release/"; then
+            echo "is-release-merge=true" >> $GITHUB_OUTPUT
+            echo "Detected release branch merge, skipping CI tests"
+          else
+            echo "is-release-merge=false" >> $GITHUB_OUTPUT
+            echo "Not a release branch merge, running CI tests"
+          fi
   # Job 1: Swift Package 빌드 및 테스트
   build-and-test:
     name: Build and Test AsyncFlow
     runs-on: macos-15
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
+    needs: [check-release-branch]
         
     steps:
     - name: Checkout
@@ -25,20 +60,21 @@ jobs:
       run: |
         xcodebuild -version
         swift --version
-      
-    - name: Build AsyncFlow
-      run: swift build -c release
+    
+    - name: Install Tuist
+      run: brew install tuist
+    
+    - name: Install Dependencies
+      run: tuist install
+    
+    - name: Generate Xcode Project
+      run: tuist generate
       
     - name: Test AsyncFlow
-      run: swift test --enable-code-coverage --parallel
-      
-    - name: Generate Coverage Report
-      run: |
-        xcrun llvm-cov export -format="lcov" \
-          .build/debug/AsyncFlowPackageTests.xctest/Contents/MacOS/AsyncFlowPackageTests \
-          -instr-profile .build/debug/codecov/default.profdata > coverage.lcov || true
+      run: tuist test AsyncFlow
       
     - name: Upload Coverage
+      if: false  # iOS 빌드는 커버리지 업로드 스킵
       uses: codecov/codecov-action@v5
       with:
         files: coverage.lcov
@@ -49,6 +85,9 @@ jobs:
   validate-package:
     name: Validate Swift Package
     runs-on: macos-15
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
+    needs: [check-release-branch]
     
     steps:
     - name: Checkout
@@ -63,12 +102,15 @@ jobs:
       run: |
         echo "=== Validating AsyncFlow Package ==="
         swift package dump-package
-        swift package show-dependencies
+        # iOS 전용 패키지이므로 의존성 확인은 스킵
   
   # Job 3: 코드 스타일
   lint:
     name: SwiftLint
     runs-on: macos-15
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
+    needs: [check-release-branch]
     
     steps:
     - name: Checkout
@@ -88,6 +130,9 @@ jobs:
   build-example:
     name: Build Example Project
     runs-on: macos-15
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
+    needs: [check-release-branch]
     
     steps:
     - name: Checkout

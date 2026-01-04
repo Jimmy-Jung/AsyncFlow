@@ -3,13 +3,11 @@
 <div align="center">
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2015.0%2B%20%7C%20macOS%2012.0%2B-lightgrey.svg)](https://developer.apple.com)
+[![Platform](https://img.shields.io/badge/Platform-iOS%2015.0%2B-lightgrey.svg)](https://developer.apple.com)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![SPM](https://img.shields.io/badge/Swift%20Package%20Manager-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
 Swift Concurrency 기반의 선언적 네비게이션 프레임워크
-
-[English](README_EN.md) | 한국어
 
 </div>
 
@@ -29,7 +27,6 @@ AsyncFlow는 [RxFlow](https://github.com/RxSwiftCommunity/RxFlow)에서 영감�
 - ✅ **AsyncViewModel 친화적**: 단방향 데이터 흐름과 자연스럽게 통합
 - ✅ **딥링크 지원**: 외부에서 Step을 주입하여 딥링크 처리 가능
 - ✅ **테스트 가능**: FlowTestStore를 통한 네비게이션 로직 테스트 지원
-- ✅ **플랫폼 중립**: iOS, macOS 모두 지원
 
 ### RxFlow와의 차이점
 
@@ -38,7 +35,7 @@ AsyncFlow는 [RxFlow](https://github.com/RxSwiftCommunity/RxFlow)에서 영감�
 | 비동기 처리 | RxSwift Observable | Swift Concurrency (async/await) |
 | Step 스트림 | PublishRelay<Step> | AsyncStream<Step> |
 | 메모리 관리 | DisposeBag | Task 자동 정리 |
-| 플랫폼 지원 | iOS 전용 | iOS, macOS |
+| 플랫폼 지원 | iOS 전용 | iOS 전용 |
 | 의존성 | RxSwift, RxCocoa | 없음 (Swift 표준 라이브러리만 사용) |
 
 ---
@@ -393,6 +390,70 @@ coordinator.coordinate(flow: appFlow, with: appStepper)
 
 ## 고급 기능
 
+### 네비게이션 로깅
+
+AsyncFlow는 네비게이션 스택을 추적하고 로깅할 수 있는 기능을 제공합니다.
+
+#### 기본 콘솔 로깅
+
+```swift
+// 콘솔에 로그 출력
+let coordinator = FlowCoordinator(logger: ConsoleFlowLogger())
+```
+
+출력 형식:
+```
+🔄 Navigation willShow: loginSuccess
+📚 Stack updated: loginStart → emailInput → passwordInput → loginSuccess
+```
+
+#### 커스텀 로거 구현
+
+외부 로깅 시스템(OSLog, Firebase, Sentry 등)을 연동할 수 있습니다.
+
+```swift
+import OSLog
+
+final class OSLogFlowLogger: FlowLogger {
+    private let logger = Logger(subsystem: "com.myapp", category: "navigation")
+    
+    func log(navigationStack: NavigationStack) {
+        logger.info("""
+        Flow: \(navigationStack.flowName)
+        Steps: \(navigationStack.steps.map(\.caseDescription).joined(separator: " -> "))
+        Depth: \(navigationStack.depth)
+        """)
+    }
+}
+
+// 사용
+let coordinator = FlowCoordinator(logger: OSLogFlowLogger())
+```
+
+#### Firebase Analytics 예시
+
+```swift
+final class FirebaseFlowLogger: FlowLogger {
+    func log(navigationStack: NavigationStack) {
+        Analytics.logEvent("navigation", parameters: [
+            "flow": navigationStack.flowName,
+            "depth": navigationStack.depth,
+            "current_step": navigationStack.steps.last?.caseDescription ?? "none",
+            "path": navigationStack.steps.map(\.caseDescription).joined(separator: "->")
+        ])
+    }
+}
+```
+
+#### 로깅 비활성화
+
+기본적으로 로깅은 비활성화되어 있습니다.
+
+```swift
+// 로거를 지정하지 않으면 NoOpFlowLogger 사용 (로그 출력 없음)
+let coordinator = FlowCoordinator()
+```
+
 ### Step 적응 (Adaptation)
 
 권한 체크, 로그인 확인 등의 로직을 구현할 수 있습니다.
@@ -670,15 +731,12 @@ tuist test AsyncFlow
 ## 문서
 
 - [API 레퍼런스](https://jimmy-jung.github.io/AsyncFlow/documentation/asyncflow/) (DocC)
-- [마이그레이션 가이드](Docs/MIGRATION.md) (RxFlow → AsyncFlow)
-- [아키텍처 가이드](Docs/ARCHITECTURE.md)
-- [FAQ](Docs/FAQ.md)
 
 ---
 
 ## 요구사항
 
-- iOS 15.0+ / macOS 12.0+
+- iOS 15.0+
 - Swift 6.0+
 - Xcode 16.0+
 

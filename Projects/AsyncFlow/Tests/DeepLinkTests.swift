@@ -129,7 +129,7 @@ import Testing
             parentStepper.emit(ParentStep.openChild)
             await Test.waitUntil(timeout: 2.0) { parentFlow.childFlow != nil }
 
-            guard let child = parentFlow.childFlow else {
+            guard parentFlow.childFlow != nil else {
                 #expect(Bool(false), "Child flow should be created")
                 return
             }
@@ -162,7 +162,7 @@ import Testing
             parentStepper.emit(ParentStep.openChild)
             await Test.waitUntil(timeout: 2.0) { parentFlow.childFlow != nil }
 
-            guard let child = parentFlow.childFlow else {
+            guard parentFlow.childFlow != nil else {
                 #expect(Bool(false), "Child flow should be created")
                 return
             }
@@ -283,6 +283,12 @@ import Testing
 
             stepper.emit(ForwardStep.triggerForward)
             await Test.waitUntil { flow.navigateCallCount >= 2 }
+
+            // forwardToCurrentFlow는 비동기로 처리되므로 forwarded step이 처리될 때까지 대기
+            await Test.waitUntil(timeout: 2.0) {
+                flow.navigateCallCount >= 3 &&
+                    flow.lastReceivedSteps.contains(where: { ($0 as? ForwardStep) == .forwarded })
+            }
 
             // Then - initial, triggerForward, forwarded 총 3번 호출
             #expect(flow.navigateCallCount >= 3)

@@ -166,6 +166,29 @@ final class MockPresentable: Presentable {
     }
 }
 
+// MARK: - Mock Stepper
+
+@MainActor
+final class MockStepper: FlowStepper {
+    @Steps var steps
+    var initialStep: Step { _initialStep }
+
+    private var _initialStep: Step = NoneStep()
+    var onObservationStart: (() -> Void)?
+
+    func emit(_ step: Step) {
+        steps.send(step)
+    }
+
+    func setInitialStep(_ step: Step) {
+        _initialStep = step
+    }
+
+    func readyToEmitSteps() {
+        onObservationStart?()
+    }
+}
+
 // MARK: - Test ViewModel
 
 @MainActor
