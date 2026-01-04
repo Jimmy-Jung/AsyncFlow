@@ -3,7 +3,7 @@
 <div align="center">
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2015.0%2B%20%7C%20macOS%2012.0%2B-lightgrey.svg)](https://developer.apple.com)
+[![Platform](https://img.shields.io/badge/Platform-iOS%2015.0%2B-lightgrey.svg)](https://developer.apple.com)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![SPM](https://img.shields.io/badge/Swift%20Package%20Manager-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
@@ -27,7 +27,6 @@ AsyncFlow는 [RxFlow](https://github.com/RxSwiftCommunity/RxFlow)에서 영감�
 - ✅ **AsyncViewModel 친화적**: 단방향 데이터 흐름과 자연스럽게 통합
 - ✅ **딥링크 지원**: 외부에서 Step을 주입하여 딥링크 처리 가능
 - ✅ **테스트 가능**: FlowTestStore를 통한 네비게이션 로직 테스트 지원
-- ✅ **플랫폼 중립**: iOS, macOS 모두 지원
 
 ### RxFlow와의 차이점
 
@@ -36,7 +35,7 @@ AsyncFlow는 [RxFlow](https://github.com/RxSwiftCommunity/RxFlow)에서 영감�
 | 비동기 처리 | RxSwift Observable | Swift Concurrency (async/await) |
 | Step 스트림 | PublishRelay<Step> | AsyncStream<Step> |
 | 메모리 관리 | DisposeBag | Task 자동 정리 |
-| 플랫폼 지원 | iOS 전용 | iOS, macOS |
+| 플랫폼 지원 | iOS 전용 | iOS 전용 |
 | 의존성 | RxSwift, RxCocoa | 없음 (Swift 표준 라이브러리만 사용) |
 
 ---
@@ -737,7 +736,7 @@ tuist test AsyncFlow
 
 ## 요구사항
 
-- iOS 15.0+ / macOS 12.0+
+- iOS 15.0+
 - Swift 6.0+
 - Xcode 16.0+
 

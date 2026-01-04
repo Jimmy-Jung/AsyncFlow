@@ -12,7 +12,6 @@ let package = Package(
     name: "AsyncFlow",
     platforms: [
         .iOS(.v15),
-        .macOS(.v12),
     ],
     products: [
         .library(
