@@ -84,10 +84,8 @@ jobs:
   validate-package:
     name: Validate Swift Package
     runs-on: macos-15
-    if: |
-      github.event_name != 'push' || 
-      github.ref != 'refs/heads/main' || 
-      (needs.check-release-branch.outputs.is-release-merge != 'true' && needs.check-release-branch.result == 'success')
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
     needs: [check-release-branch]
     
     steps:
@@ -109,10 +107,8 @@ jobs:
   lint:
     name: SwiftLint
     runs-on: macos-15
-    if: |
-      github.event_name != 'push' || 
-      github.ref != 'refs/heads/main' || 
-      (needs.check-release-branch.outputs.is-release-merge != 'true' && needs.check-release-branch.result == 'success')
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
     needs: [check-release-branch]
     
     steps:
@@ -133,10 +129,8 @@ jobs:
   build-example:
     name: Build Example Project
     runs-on: macos-15
-    if: |
-      github.event_name != 'push' || 
-      github.ref != 'refs/heads/main' || 
-      (needs.check-release-branch.outputs.is-release-merge != 'true' && needs.check-release-branch.result == 'success')
+    # release 브랜치 머지인 경우 건너뛰기 (release.yml에서 실행)
+    if: needs.check-release-branch.outputs.is-release-merge != 'true'
     needs: [check-release-branch]
     
     steps:
